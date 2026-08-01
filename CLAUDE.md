@@ -88,15 +88,10 @@ determinista, qué decide el modelo y qué no puede decidir nadie.
 
    En el servidor solo se tocan **variables de entorno** (`.env`) y se ejecutan
    `git pull`, `docker compose build`, `docker compose up -d`, los `make` de
-   operación y los tests. Nada de `vim` sobre un archivo del repo, ni parches en
-   caliente, ni "lo arreglo aquí y luego lo paso".
-
-   El motivo no es purismo: un cambio hecho solo en el servidor no está en
-   git, no pasó por los tests y desaparece en el siguiente `git pull` —
-   normalmente en mitad de un despliegue, que es el peor momento para
-   descubrirlo. Si algo solo se puede arreglar en el servidor, es que falta una
-   variable de entorno; añádela al `.env.example` y al `docker-compose.yml`
-   desde local.
+   operación y los tests. Nada de `vim` sobre un archivo del repo, ni parches
+   en caliente, ni "lo arreglo aquí y luego lo paso". Si algo solo se puede
+   arreglar en el servidor, es que falta una variable de entorno; añádela al
+   `.env.example` y al `docker-compose.yml` desde local.
 
    Si al hacer `pull` el servidor reporta cambios locales, no los fusiones:
    averigua quién los hizo y por qué, porque son un parche fuera de git.

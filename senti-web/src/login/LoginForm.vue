@@ -10,7 +10,14 @@ const errors = reactive({ email: "", password: "" });
 const remember = ref(true);
 const submitting = ref(false);
 const successMessage = ref("");
+const errorMessage = ref("");
 const forgotMessage = ref("");
+
+interface LoginResponse {
+  access_token: string;
+  role: string;
+  expires_in: number;
+}
 
 function validate() {
   const email = form.email.trim();
@@ -31,12 +38,46 @@ function validate() {
 
 async function handleSubmit() {
   successMessage.value = "";
+  errorMessage.value = "";
   if (!validate() || submitting.value) return;
 
   submitting.value = true;
-  await new Promise((resolve) => setTimeout(resolve, 800));
-  submitting.value = false;
-  successMessage.value = "Inicio de sesión simulado correctamente";
+  try {
+    const respuesta = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: form.email.trim(),
+        password: form.password,
+      }),
+    });
+    const cuerpo = (await respuesta.json().catch(() => ({}))) as Partial<LoginResponse> & {
+      detail?: string;
+    };
+    if (!respuesta.ok || !cuerpo.access_token || !cuerpo.role) {
+      throw new Error(
+        typeof cuerpo.detail === "string"
+          ? cuerpo.detail
+          : "No se pudo iniciar sesión con esas credenciales.",
+      );
+    }
+
+    if (!["operador_municipal", "administrador"].includes(cuerpo.role)) {
+      throw new Error("Esta entrada es solo para personal municipal autorizado.");
+    }
+
+    const almacenamiento = remember.value ? localStorage : sessionStorage;
+    almacenamiento.setItem("senti_access_token", cuerpo.access_token);
+    almacenamiento.setItem("senti_role", cuerpo.role);
+    successMessage.value = "Sesión iniciada correctamente.";
+    window.location.assign("/dashboard.html");
+  } catch (motivo) {
+    errorMessage.value = motivo instanceof Error
+      ? motivo.message
+      : "No se pudo conectar con SENTI.";
+  } finally {
+    submitting.value = false;
+  }
 }
 
 // Pantalla de recuperación aún no implementada; se deja explícito en vez de
@@ -93,6 +134,7 @@ function handleForgotPassword() {
         </button>
       </div>
       <p v-if="forgotMessage" class="login-card__hint" role="status">{{ forgotMessage }}</p>
+      <p v-if="errorMessage" class="login-card__error" role="alert">{{ errorMessage }}</p>
 
       <button type="submit" class="submit-button" :disabled="submitting">
         <span v-if="submitting" class="spinner" aria-hidden="true"></span>
@@ -307,6 +349,16 @@ function handleForgotPassword() {
   border-radius: 10px;
   background: #e7f3ea;
   color: #1c6b3a;
+  font-size: 13.5px;
+  text-align: center;
+}
+
+.login-card__error {
+  margin: 16px 0 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #fff0ef;
+  color: var(--rojo);
   font-size: 13.5px;
   text-align: center;
 }
