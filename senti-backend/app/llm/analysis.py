@@ -18,6 +18,7 @@ confiar en que el servidor cumplió no es verificar.
 from __future__ import annotations
 
 import logging
+from io import BytesIO
 
 from pydantic import ValidationError
 
@@ -32,6 +33,25 @@ logger = logging.getLogger(__name__)
 # respuesta. Se recorta por delante: los campos que interesan —número, nivel,
 # zonas, vigencia— van siempre en la cabecera del documento.
 MAX_CARACTERES_DOCUMENTO = 6000
+
+
+def extraer_texto_pdf(contenido: bytes) -> str:
+    """Texto plano de un PDF, página por página, para pasarlo a `extraer_alerta`.
+
+    Solo lee texto ya embebido en el PDF. Un PDF escaneado (imagen sin capa de
+    texto) devuelve una cadena vacía — no hay OCR aquí — y quien llame debe
+    tratar eso como "no se pudo leer", nunca como "documento vacío de verdad".
+    """
+    from pypdf import PdfReader
+    from pypdf.errors import PdfReadError
+
+    try:
+        lector = PdfReader(BytesIO(contenido))
+    except PdfReadError as exc:
+        raise LLMInvalidOutput(f"El archivo no es un PDF válido: {exc}") from exc
+
+    paginas = [pagina.extract_text() or "" for pagina in lector.pages]
+    return "\n".join(paginas).strip()
 
 
 def extraer_alerta(

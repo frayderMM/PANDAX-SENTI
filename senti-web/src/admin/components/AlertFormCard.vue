@@ -15,14 +15,6 @@ const emit = defineEmits<{
 
 const form = defineModel<AlertaForm>({ required: true });
 
-const ZONAS = [
-  { value: "centro", label: "Centro" },
-  { value: "norte", label: "Norte" },
-  { value: "sur", label: "Sur" },
-  { value: "este", label: "Este" },
-  { value: "oeste", label: "Oeste" },
-];
-
 const TIPOS_EVENTO = [
   { value: "inundacion", label: "Inundación" },
   { value: "huaico", label: "Huaico" },
@@ -61,13 +53,16 @@ const GRAVEDADES = [
 
       <div class="field-row">
         <label class="field">
-          <span class="field__label">Zona</span>
+          <span class="field__label">Distrito</span>
           <span class="field__control">
             <Icon name="map-pin" :size="17" class="field__icon" />
-            <select v-model="form.zona" class="field__input field__input--select">
-              <option v-for="z in ZONAS" :key="z.value" :value="z.value">{{ z.label }}</option>
-            </select>
-            <Icon name="chevron-down" :size="15" class="field__chevron" />
+            <input
+              v-model="form.zona"
+              type="text"
+              class="field__input"
+              placeholder="Lurigancho-Chosica"
+              required
+            />
           </span>
         </label>
 

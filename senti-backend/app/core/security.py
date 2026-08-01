@@ -36,6 +36,7 @@ class Permission(str, enum.Enum):
     CONFIRMAR_CIERRE_VIA = "confirmar_cierre_via"
     REGISTRAR_RECURSO = "registrar_recurso"
     PUBLICAR_COMUNICADO = "publicar_comunicado"
+    PUBLICAR_ALERTA = "publicar_alerta"
     GESTIONAR_USUARIOS_Y_FUENTES = "gestionar_usuarios_y_fuentes"
     CONSULTAR_AUDITORIA = "consultar_auditoria"
     CONSULTAR_AUDITORIA_PROPIA = "consultar_auditoria_propia"
@@ -78,6 +79,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.CONFIRMAR_CIERRE_VIA,
             Permission.REGISTRAR_RECURSO,
             Permission.PUBLICAR_COMUNICADO,
+            Permission.PUBLICAR_ALERTA,
             Permission.CONSULTAR_AUDITORIA_PROPIA,
         }
     ),

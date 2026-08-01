@@ -16,6 +16,8 @@ from app.core.security import Permission, Role
 from app.domain import ConfidenceLevel, HazardType, ReportState, SourceStatus, TrustLevel
 from app.models import (
     Alert,
+    AlertSubscriber,
+    AlertZone,
     CitizenReport,
     MunicipalNotice,
     OfficialSource,
@@ -223,6 +225,117 @@ def _zona_alerta(alerta: Alert) -> str:
     if zona is None:
         return _DISTRITO_PILOTO
     return zona.distrito or zona.nombre or _DISTRITO_PILOTO
+
+
+class AlertaEntrada(BaseModel):
+    tipo_evento: HazardType
+    titulo: str = Field(max_length=400)
+    # Texto libre a propósito (INDECI/SENAMHI no tienen un enum cerrado), pero
+    # `rules/municipal_dashboard.color_alerta` espera Roja/Naranja/Amarilla/Verde.
+    nivel_oficial: str = Field(max_length=64)
+    entidad_emisora: str | None = Field(default=None, max_length=160)
+    descripcion: str | None = Field(default=None, max_length=4000)
+    recomendaciones: list[str] | None = None
+    # Sin subdivisión real por zonas (§22): el piloto es un solo distrito, así
+    # que esto es el nombre del distrito, no una de las 5 zonas del mockup.
+    distrito: str = Field(default=_DISTRITO_PILOTO, max_length=120)
+    vigencia_horas: int = Field(default=24, ge=1, le=720)
+    notificar_whatsapp: bool = True
+
+
+# Polígono ilustrativo alrededor de Chosica (mismas coordenadas que
+# `senti-backend/app/db/seeds.py`, CHOSICA_LAT/CHOSICA_LON): la UI todavía no
+# permite dibujar la zona real de una alerta, así que toda alerta publicada
+# desde el panel cae en el mismo polígono aproximado del piloto.
+_CHOSICA_LAT, _CHOSICA_LON = -11.9404, -76.7006
+_D = 0.03
+_POLIGONO_PILOTO = Polygon([
+    (_CHOSICA_LON - _D, _CHOSICA_LAT - _D),
+    (_CHOSICA_LON + _D, _CHOSICA_LAT - _D),
+    (_CHOSICA_LON + _D, _CHOSICA_LAT + _D),
+    (_CHOSICA_LON - _D, _CHOSICA_LAT + _D),
+    (_CHOSICA_LON - _D, _CHOSICA_LAT - _D),
+])
+
+
+@router.post("/alertas", status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(exige(Permission.PUBLICAR_ALERTA))])
+def publicar_alerta(
+    datos: AlertaEntrada,
+    request: Request,
+    session: Session = Depends(db),
+    user: User = Depends(usuario_actual),
+) -> dict:
+    """Publica una alerta real y, si se pide, difunde por WhatsApp (§13.4).
+
+    Esto es lo que separa a `Alert` de `MunicipalNotice`: una alerta entra a
+    la escalera de confianza (§12) y puede llegar por WhatsApp a quien haya
+    dado consentimiento explícito para su distrito. El operador confirma cada
+    campo antes de llegar aquí — nada de esto lo decide el modelo (§15).
+    """
+    ahora = datetime.now(UTC)
+    alerta = Alert(
+        tipo_evento=datos.tipo_evento,
+        titulo=datos.titulo,
+        nivel_oficial=datos.nivel_oficial,
+        entidad_emisora=datos.entidad_emisora or user.municipality or "Municipalidad",
+        confianza=ConfidenceLevel.MUNICIPAL,
+        vigencia_inicio=ahora,
+        vigencia_fin=ahora + timedelta(hours=datos.vigencia_horas),
+        vigente=True,
+        recomendaciones_oficiales=datos.recomendaciones,
+        resumen_modelo=datos.descripcion,
+        actualizado_en_origen=ahora,
+    )
+    session.add(alerta)
+    session.flush()
+
+    session.add(
+        AlertZone(
+            alert_id=alerta.id,
+            nombre=datos.distrito,
+            distrito=datos.distrito,
+            provincia="Lima",
+            departamento="Lima",
+            geom=from_shape(_POLIGONO_PILOTO, srid=SRID),
+        )
+    )
+
+    destinatarios = session.scalar(
+        select(func.count(AlertSubscriber.id)).where(
+            AlertSubscriber.activo.is_(True), AlertSubscriber.distrito == datos.distrito
+        )
+    ) or 0
+
+    auditar(session, request, actor=user, accion="alerta.publicar", entidad="alert",
+            entidad_id=str(alerta.id),
+            detalle={"tipo": datos.tipo_evento.value, "nivel": datos.nivel_oficial,
+                     "distrito": datos.distrito, "destinatarios": destinatarios})
+
+    notificacion = "deshabilitada"
+    if datos.notificar_whatsapp:
+        if destinatarios:
+            from app.tasks.celery_app import enviar_alerta_whatsapp
+
+            # `session.flush()` ya mandó la fila a Postgres pero el commit
+            # ocurre al terminar el request (ver `app.api.deps.db`); la tarea
+            # corre en otro proceso y puede llegar a leerla antes de que el
+            # commit se confirme. `countdown` le da margen sin bloquear aquí
+            # a esperar el commit.
+            enviar_alerta_whatsapp.apply_async(args=[str(alerta.id)], countdown=2)
+            notificacion = "en curso"
+        else:
+            notificacion = "sin destinatarios"
+
+    return {
+        "id": str(alerta.id),
+        "titulo": alerta.titulo,
+        "nivel_oficial": alerta.nivel_oficial,
+        "distrito": datos.distrito,
+        "vigente": True,
+        "destinatarios_estimados": destinatarios,
+        "notificacion_whatsapp": notificacion,
+    }
 
 
 @router.get("/tablero", dependencies=[Depends(exige(Permission.PUBLICAR_COMUNICADO))])

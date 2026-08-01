@@ -7,42 +7,34 @@ import SeverityCard from "../components/SeverityCard.vue";
 import ZonaAfectadaCard from "../components/ZonaAfectadaCard.vue";
 import InfoStatCard from "../components/InfoStatCard.vue";
 import ActionsPanel from "../components/ActionsPanel.vue";
+import { gravedadDesdeNivel, interpretarPdf, publicarAlerta } from "../services/alertas";
 import type { AlertaForm, DocumentoAdjunto } from "../types";
 
-const documento = ref<DocumentoAdjunto | null>({
-  nombre: "Reporte_inundacion_Centro.pdf",
-  tamanoTexto: "1.2 MB",
-  fechaTexto: "12 may 2025 10:32 a. m.",
-});
+const archivoSeleccionado = ref<File | null>(null);
+const documento = ref<DocumentoAdjunto | null>(null);
 
 const analizando = ref(false);
-const autocompletado = ref(true);
+const autocompletado = ref(false);
 
 const alerta = reactive<AlertaForm>({
-  titulo: "Inundación en zona centro por lluvias intensas",
-  zona: "centro",
-  fechaHora: "2025-05-12T10:30",
+  titulo: "",
+  zona: "Lurigancho-Chosica",
+  fechaHora: new Date().toISOString().slice(0, 16),
   tipoEvento: "inundacion",
-  descripcion:
-    "Se registran lluvias intensas desde la madrugada provocando anegaciones en calles principales del centro. Nivel de agua entre 20 y 40 cm en vialidades. Tránsito afectado y riesgo para peatones en pasos a desnivel.",
-  recomendacion:
-    "Evitar transitar por zonas bajas y calles anegadas. No intentar cruzar corrientes de agua. Seguir indicaciones de Protección Civil.",
+  descripcion: "",
+  recomendacion: "",
   gravedad: "amarillo",
 });
-
-// Resumen de la derecha: en un análisis real vendría de Gemma + monitoreo.
-// Aquí es un mock fijo, no se recalcula a partir del formulario.
-const resumen = {
-  zonaNombre: "Centro",
-  zonaDetalle: "Colonias del centro y zonas aledañas",
-  prioridad: "Media",
-  prioridadDetalle: "Requiere atención y monitoreo",
-  ciudadanos: "12,450",
-};
 
 const guardando = ref(false);
 const enviando = ref(false);
 const mensaje = ref("");
+const mensajeEsError = ref(false);
+
+// Antes de publicar no hay un número real todavía: se calcula recién al
+// enviar, contra los suscriptores activos del distrito escrito arriba.
+const destinatarios = ref<number | null>(null);
+const ultimaNotificacion = ref<"en curso" | "sin destinatarios" | "deshabilitada" | null>(null);
 
 function formatearArchivo(file: File): DocumentoAdjunto {
   const mb = file.size / (1024 * 1024);
@@ -59,40 +51,73 @@ function formatearArchivo(file: File): DocumentoAdjunto {
 }
 
 function onArchivoSeleccionado(file: File) {
+  archivoSeleccionado.value = file;
   documento.value = formatearArchivo(file);
   autocompletado.value = false;
   mensaje.value = "";
 }
 
 async function analizarDocumento() {
-  if (!documento.value || analizando.value) return;
+  if (!archivoSeleccionado.value || analizando.value) return;
   analizando.value = true;
   mensaje.value = "";
-  await new Promise((resolve) => setTimeout(resolve, 900));
-  analizando.value = false;
-  autocompletado.value = true;
-  mensaje.value = "Documento analizado: se completaron los datos de la alerta.";
+  mensajeEsError.value = false;
+  try {
+    const resultado = await interpretarPdf(archivoSeleccionado.value);
+    const propuesta = resultado.propuesta;
+    alerta.titulo = propuesta.titulo;
+    alerta.tipoEvento = propuesta.tipo_evento;
+    alerta.descripcion = propuesta.resumen_ciudadano;
+    alerta.recomendacion = propuesta.recomendaciones.join("\n");
+    alerta.gravedad = gravedadDesdeNivel(propuesta.nivel_detectado);
+    autocompletado.value = true;
+    mensaje.value = propuesta.datos_faltantes.length
+      ? `Documento analizado. El modelo no pudo confirmar: ${propuesta.datos_faltantes.join(", ")}.`
+      : "Documento analizado: revisa los campos antes de enviar.";
+  } catch (motivo) {
+    mensajeEsError.value = true;
+    mensaje.value = motivo instanceof Error ? motivo.message : "No se pudo analizar el documento.";
+  } finally {
+    analizando.value = false;
+  }
 }
 
 async function guardarCambios() {
   if (guardando.value) return;
   guardando.value = true;
   mensaje.value = "";
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  mensajeEsError.value = false;
+  await new Promise((resolve) => setTimeout(resolve, 400));
   guardando.value = false;
-  mensaje.value = "Cambios guardados (simulado).";
+  mensajeEsError.value = true;
+  mensaje.value = "Guardar borrador todavía no está implementado: publica o descarta.";
 }
 
 async function enviarAlerta() {
   if (enviando.value) return;
   enviando.value = true;
   mensaje.value = "";
-  await new Promise((resolve) => setTimeout(resolve, 900));
-  enviando.value = false;
-  mensaje.value = "Alerta enviada (simulado). Todavía no se conecta a ningún canal real.";
+  mensajeEsError.value = false;
+  try {
+    const resultado = await publicarAlerta(alerta, { notificarWhatsapp: true });
+    destinatarios.value = resultado.destinatarios_estimados;
+    ultimaNotificacion.value = resultado.notificacion_whatsapp;
+    mensaje.value =
+      resultado.notificacion_whatsapp === "en curso"
+        ? `Alerta publicada. Difundiéndose por WhatsApp a ${resultado.destinatarios_estimados} suscriptor(es) de ${resultado.distrito}.`
+        : resultado.notificacion_whatsapp === "sin destinatarios"
+          ? `Alerta publicada. Nadie tiene alertas de WhatsApp activas para ${resultado.distrito} todavía.`
+          : "Alerta publicada. La difusión por WhatsApp no está configurada en este servidor.";
+  } catch (motivo) {
+    mensajeEsError.value = true;
+    mensaje.value = motivo instanceof Error ? motivo.message : "No se pudo publicar la alerta.";
+  } finally {
+    enviando.value = false;
+  }
 }
 
 function vistaPrevia() {
+  mensajeEsError.value = false;
   mensaje.value = "Vista previa: pendiente de implementación.";
 }
 </script>
@@ -104,7 +129,14 @@ function vistaPrevia() {
       subtitle="Crea y envía alertas para mantener informada a la comunidad."
     />
 
-    <p v-if="mensaje" class="alertas-view__mensaje" role="status">{{ mensaje }}</p>
+    <p
+      v-if="mensaje"
+      class="alertas-view__mensaje"
+      :class="{ 'alertas-view__mensaje--error': mensajeEsError }"
+      role="status"
+    >
+      {{ mensaje }}
+    </p>
 
     <div class="alertas-view__grid">
       <div class="alertas-view__main">
@@ -126,20 +158,13 @@ function vistaPrevia() {
 
       <aside class="alertas-view__aside">
         <SeverityCard v-model="alerta.gravedad" />
-        <ZonaAfectadaCard :nombre="resumen.zonaNombre" :detalle="resumen.zonaDetalle" />
-        <InfoStatCard
-          icon="flag"
-          title="Prioridad estimada"
-          :value="resumen.prioridad"
-          :detail="resumen.prioridadDetalle"
-          badge="Automática"
-        />
+        <ZonaAfectadaCard :nombre="alerta.zona || 'Sin distrito'" detalle="Distrito de la alerta" />
         <InfoStatCard
           icon="users"
           title="Ciudadanos a notificar"
-          :value="resumen.ciudadanos"
-          detail="Personas en la zona"
-          badge="Estimado"
+          :value="destinatarios === null ? '—' : String(destinatarios)"
+          :detail="destinatarios === null ? 'Se calcula al enviar' : `Suscritos por WhatsApp en ${alerta.zona}`"
+          :badge="destinatarios === null ? 'Pendiente' : 'Real'"
         />
         <ActionsPanel :enviando="enviando" @vista-previa="vistaPrevia" @enviar="enviarAlerta" />
       </aside>
@@ -155,6 +180,11 @@ function vistaPrevia() {
   background: var(--verde-tenue);
   color: #1c6b3a;
   font-size: 13px;
+}
+
+.alertas-view__mensaje--error {
+  background: var(--rojo-tenue);
+  color: var(--rojo);
 }
 
 .alertas-view__grid {

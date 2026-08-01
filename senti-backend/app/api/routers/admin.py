@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,6 +12,10 @@ from sqlalchemy.orm import Session
 from app.api.deps import auditar, db, exige, usuario_actual
 from app.core.security import Permission, Role
 from app.models import AuditLog, OfficialSource, RiskParameters, User
+
+# Mismo criterio que el resto de subidas del sistema: un límite explícito en
+# vez de confiar en que nadie mande un archivo enorme para saturar el proceso.
+MAX_PDF_BYTES = 15 * 1024 * 1024
 
 router = APIRouter(prefix="/admin", tags=["administración"])
 
@@ -151,31 +155,30 @@ class DocumentoEntrada(BaseModel):
     indexar_en_rag: bool = True
 
 
-@router.post("/alertas/interpretar",
-             dependencies=[Depends(exige(Permission.GESTIONAR_USUARIOS_Y_FUENTES))])
-def interpretar_documento(
-    datos: DocumentoEntrada,
+def _interpretar_y_registrar(
+    texto: str,
+    *,
+    titulo: str | None,
+    entidad: str | None,
+    url_origen: str | None,
+    indexar_en_rag: bool,
     request: Request,
-    session: Session = Depends(db),
-    admin: User = Depends(usuario_actual),
+    session: Session,
+    admin: User,
 ) -> dict:
-    """§15: interpreta un boletín oficial y devuelve una PROPUESTA.
+    """Cuerpo común de `/alertas/interpretar` y `/alertas/interpretar-pdf`.
 
     No crea la alerta. El §15 dice que Gemma no puede cambiar el nivel oficial,
     inventar zonas, extender la vigencia ni publicar una alerta por sí sola; el
-    operador revisa esta salida y publica con `POST /municipal/...` si procede.
-
-    Si `indexar_en_rag`, el documento entra además al RAG (§19) con su hash y su
-    URL, que es lo que permite citarlo después.
+    operador revisa esta salida y publica con `POST /municipal/alertas` si
+    procede.
     """
     from app.llm import LLMInvalidOutput, LLMUnavailable
     from app.llm.analysis import extraer_alerta
     from app.rag import ingerir
 
     try:
-        propuesta = extraer_alerta(
-            datos.texto, titulo=datos.titulo, entidad=datos.entidad
-        )
+        propuesta = extraer_alerta(texto, titulo=titulo, entidad=entidad)
     except (LLMUnavailable, LLMInvalidOutput) as exc:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -183,12 +186,12 @@ def interpretar_documento(
         ) from exc
 
     fragmentos = 0
-    if datos.indexar_en_rag:
+    if indexar_en_rag:
         resultado = ingerir(
             session,
-            titulo=datos.titulo or propuesta.titulo,
-            texto=datos.texto,
-            url_origen=datos.url_origen,
+            titulo=titulo or propuesta.titulo,
+            texto=texto,
+            url_origen=url_origen,
             hazard=propuesta.tipo_evento,
             coleccion=propuesta.tipo_evento.value,
         )
@@ -207,3 +210,79 @@ def interpretar_documento(
             "alerta ni fijar su nivel o vigencia: revísala y publícala tú."
         ),
     }
+
+
+@router.post("/alertas/interpretar",
+             dependencies=[Depends(exige(Permission.PUBLICAR_ALERTA))])
+def interpretar_documento(
+    datos: DocumentoEntrada,
+    request: Request,
+    session: Session = Depends(db),
+    admin: User = Depends(usuario_actual),
+) -> dict:
+    """§15: interpreta un boletín oficial ya convertido a texto."""
+    return _interpretar_y_registrar(
+        datos.texto,
+        titulo=datos.titulo,
+        entidad=datos.entidad,
+        url_origen=datos.url_origen,
+        indexar_en_rag=datos.indexar_en_rag,
+        request=request,
+        session=session,
+        admin=admin,
+    )
+
+
+@router.post("/alertas/interpretar-pdf",
+             dependencies=[Depends(exige(Permission.PUBLICAR_ALERTA))])
+async def interpretar_documento_pdf(
+    request: Request,
+    archivo: UploadFile = File(...),
+    titulo: str | None = Form(default=None),
+    entidad: str | None = Form(default=None),
+    url_origen: str | None = Form(default=None),
+    indexar_en_rag: bool = Form(default=True),
+    session: Session = Depends(db),
+    admin: User = Depends(usuario_actual),
+) -> dict:
+    """Igual que `/alertas/interpretar`, pero recibe el PDF directo.
+
+    Extrae el texto embebido del PDF (sin OCR: un PDF escaneado como imagen no
+    tiene texto que extraer) y sigue el mismo camino que la entrada por texto.
+    """
+    from app.llm import LLMInvalidOutput
+    from app.llm.analysis import extraer_texto_pdf
+
+    if archivo.content_type != "application/pdf":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Solo se aceptan archivos PDF")
+
+    contenido = await archivo.read()
+    if len(contenido) > MAX_PDF_BYTES:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"El PDF supera el máximo de {MAX_PDF_BYTES // (1024 * 1024)} MB",
+        )
+
+    try:
+        texto = extraer_texto_pdf(contenido)
+    except LLMInvalidOutput as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    if not texto:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "No se pudo extraer texto del PDF. Si es un documento escaneado "
+            "(una foto o imagen dentro del PDF), hoy no se puede leer: pega el "
+            "texto directamente con /alertas/interpretar.",
+        )
+
+    return _interpretar_y_registrar(
+        texto,
+        titulo=titulo,
+        entidad=entidad,
+        url_origen=url_origen,
+        indexar_en_rag=indexar_en_rag,
+        request=request,
+        session=session,
+        admin=admin,
+    )

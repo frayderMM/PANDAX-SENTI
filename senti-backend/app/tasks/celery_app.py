@@ -776,3 +776,88 @@ def responder_diferido(
         session.commit()
         logger.info("Respuesta diferida lista para %s", conversation_id)
         return salida.texto
+
+
+def _mensaje_alerta(alerta, distrito: str) -> str:
+    """Texto completo para WhatsApp (§7.3): fuente y hora dentro del mensaje,
+    sin depender de que alguien abra un enlace o una app."""
+    lineas = [
+        f"ALERTA {alerta.nivel_oficial.upper()} — {distrito}",
+        alerta.titulo,
+    ]
+    if alerta.resumen_modelo:
+        lineas.append("")
+        lineas.append(alerta.resumen_modelo)
+    if alerta.recomendaciones_oficiales:
+        lineas.append("")
+        lineas.append("Recomendaciones:")
+        lineas.extend(f"- {r}" for r in alerta.recomendaciones_oficiales)
+    lineas.append("")
+    hora = alerta.vigencia_inicio or alerta.created_at
+    lineas.append(f"Fuente: {alerta.entidad_emisora} · {hora.strftime('%d/%m %H:%M')}")
+    lineas.append(
+        "SENTI no reemplaza al canal oficial del Estado. El canal de alerta "
+        "masiva del Perú es SISMATE (MTC e INDECI)."
+    )
+    return "\n".join(lineas)
+
+
+@celery_app.task(name="app.tasks.celery_app.enviar_alerta_whatsapp", bind=True, max_retries=2)
+def enviar_alerta_whatsapp(self, alert_id: str) -> dict:
+    """Difunde una alerta ya publicada a quien dio consentimiento en su distrito.
+
+    Esta tarea no decide nada (§15, §6): solo entrega algo que un operador ya
+    confirmó en `POST /municipal/alertas`. Si WhatsApp no está configurado, se
+    registra y se corta ahí — no tiene sentido reintentar algo que no va a
+    empezar a estar configurado entre un reintento y el siguiente.
+    """
+    from app.channels import WhatsAppError, WhatsAppNoConfigurado, enviar_texto
+    from app.models import Alert, AlertSubscriber
+
+    with SessionLocal() as session:
+        alerta = session.get(Alert, alert_id)
+        if alerta is None:
+            logger.warning("alerta %s ya no existe, no se difunde", alert_id)
+            return {"enviados": 0, "fallidos": 0, "motivo": "alerta no encontrada"}
+
+        distritos = sorted({z.distrito for z in alerta.zones if z.distrito})
+        if not distritos:
+            logger.warning("alerta %s no tiene distrito asociado, no se difunde", alert_id)
+            return {"enviados": 0, "fallidos": 0, "motivo": "sin distrito"}
+
+        suscriptores = list(
+            session.scalars(
+                select(AlertSubscriber).where(
+                    AlertSubscriber.activo.is_(True),
+                    AlertSubscriber.distrito.in_(distritos),
+                )
+            )
+        )
+
+        if not suscriptores:
+            return {"enviados": 0, "fallidos": 0, "motivo": "sin suscriptores en el distrito"}
+
+        mensaje = _mensaje_alerta(alerta, distritos[0])
+
+        enviados = 0
+        fallidos = 0
+        for suscriptor in suscriptores:
+            try:
+                enviar_texto(suscriptor.telefono, mensaje)
+                enviados += 1
+            except WhatsAppNoConfigurado as exc:
+                logger.warning(
+                    "WhatsApp no configurado; no se difunde la alerta %s: %s", alert_id, exc
+                )
+                return {"enviados": 0, "fallidos": 0, "motivo": "whatsapp no configurado"}
+            except WhatsAppError as exc:
+                logger.warning(
+                    "no se pudo entregar la alerta %s a un suscriptor: %s", alert_id, exc
+                )
+                fallidos += 1
+
+        logger.info(
+            "alerta %s difundida: %d enviados, %d fallidos de %d suscriptores",
+            alert_id, enviados, fallidos, len(suscriptores),
+        )
+        return {"enviados": enviados, "fallidos": fallidos}
