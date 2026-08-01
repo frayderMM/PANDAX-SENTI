@@ -12,16 +12,14 @@ depende de ningún enlace.
 from __future__ import annotations
 
 import logging
-import re
 
 import httpx
 
 from app.core.config import settings
+from app.core.crypto import canonizar_telefono
 
 logger = logging.getLogger(__name__)
 
-# Evolution espera código de país + número, sin `+`, espacios ni guiones.
-_SOLO_DIGITOS = re.compile(r"\D+")
 # Perú: 51 + 9 dígitos. Se admite cualquier país, pero se rechaza lo que no
 # pueda ser un número: mandar basura a Evolution devuelve un 400 que nadie mira.
 _LONGITUD_MINIMA = 8
@@ -49,12 +47,14 @@ def normalizar_numero(numero: str) -> str:
     Solo se limpia lo que llega como número suelto, que es lo que escribe un
     humano al configurar algo: `+51 987-654-321` → `51987654321`.
 
-    **Un celular peruano de 9 dígitos que empieza en 9 se asume sin código de
-    país** y se le antepone `51`. Es lo que llega de `AlertSubscriber`: quien
-    se registra escribe "925650163", no "51925650163", y sin este paso
-    Evolution recibe un número de 9 dígitos que no resuelve a ningún JID —
-    falla en silencio para quien lo prueba, porque el envío "funciona" (no
-    lanza error hasta que Evolution responde) pero nunca llega.
+    La canonización (dígitos + `51` delante de un celular peruano de 9
+    dígitos) es la misma que usa `core.crypto.canonizar_telefono` para el
+    seudónimo de identidad: es el mismo problema —"925650163" y
+    "51925650163@s.whatsapp.net" tienen que resolver a la misma persona y al
+    mismo destinatario— resuelto una sola vez, no dos veces por separado. Sin
+    esto, `AlertSubscriber.telefono` ("925650163", tal como se registra)
+    llega a Evolution como 9 dígitos que no resuelven a ningún JID: el envío
+    no lanza error, Evolution solo no encuentra al destinatario.
     """
     if "@" in numero:
         jid = numero.strip()
@@ -62,9 +62,7 @@ def normalizar_numero(numero: str) -> str:
             raise ValueError(f"identificador de WhatsApp vacío: {numero!r}")
         return jid
 
-    limpio = _SOLO_DIGITOS.sub("", numero)
-    if len(limpio) == 9 and limpio.startswith("9"):
-        limpio = f"51{limpio}"
+    limpio = canonizar_telefono(numero)
     if not (_LONGITUD_MINIMA <= len(limpio) <= _LONGITUD_MAXIMA):
         raise ValueError(f"número de WhatsApp no utilizable: {numero!r}")
     return limpio
