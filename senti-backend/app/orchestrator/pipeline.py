@@ -60,7 +60,7 @@ from app.rules.response import (
     exigir_lenguaje_admisible,
     limitar_salida_modelo,
 )
-from app.rules.urgency import StructuralSignals, UrgencyAssessment, classify
+from app.rules.urgency import StructuralSignals, UrgencyAssessment, classify, normalize
 
 logger = logging.getLogger(__name__)
 
@@ -378,6 +378,30 @@ class Orchestrator:
             advertencias=adaptado.advertencias or [],
         )
 
+    @staticmethod
+    def _coleccion_rag(texto: str) -> str | None:
+        """Limita el RAG al protocolo del tema preguntado.
+
+        La similitud semántica por sí sola puede considerar "teléfonos" de una
+        mochila cercanos a una consulta de bomberos. La colección explícita
+        mantiene juntos pregunta y protocolo, y evita mezclar inundación,
+        huaico, incendio y preparación familiar.
+        """
+        n = normalize(texto)
+        if re.search(r"\bmochila\b|\bkit de emergencia\b|\bque llevo\b", n):
+            return "mochila"
+        if re.search(r"\blluvia\b|\bllover\b|\bpronostico\b|\balerta amarilla\b", n):
+            return "lluvia"
+        if re.search(r"\bhuaico\b|\bquebrada\b|\bdeslizamiento\b", n):
+            return "huaico"
+        if re.search(r"\binundacion\b|\bagua entrando\b|\binundad[oa]\b", n):
+            return "inundacion"
+        if re.search(r"\bincendio\b|\bfuego\b|\bhumo\b", n):
+            return "incendio"
+        if re.search(r"\bplan familiar\b|\bpunto de reunion\b", n):
+            return "primeros pasos"
+        return None
+
     # ── Camino con modelo ─────────────────────────────────────────────────
     def _respuesta_con_modelo(
         self, evaluacion: UrgencyAssessment, entrada: EntradaUsuario
@@ -469,10 +493,27 @@ class Orchestrator:
         ruteo = router.rutear(entrada.texto, tiene_imagen=entrada.imagen is not None)
         if ruteo.intent is router.Intent.TELEFONOS:
             return self._respuesta_telefonos(entrada, datetime.now())
+        if ruteo.intent is router.Intent.OFFLINE and re.search(
+            r"\bsin (senal|señal)\b", normalize(entrada.texto)
+        ):
+            adaptado = light_mode.adaptar(fx.SIN_SENAL, entrada.nivel_operacion)
+            return SalidaOrquestador(
+                texto=adaptado.texto,
+                urgencia=evaluacion.nivel,
+                respuesta_plantilla_fija=True,
+                motivo_plantilla="consulta de falta de señal (§7.5)",
+                latencia_ms=0.0,
+                advertencias=adaptado.advertencias or [],
+            )
         # Recursos y rutas son consultas geográficas: sin sesión no hay dato
         # que consultar. Otras intenciones (por ejemplo una explicación
         # general de una alerta) todavía pueden responderse con RAG.
-        if self.ctx.user is None and ruteo.intent in (router.Intent.RECURSOS, router.Intent.RUTA):
+        if self.ctx.user is None and ruteo.intent in (
+            router.Intent.RECURSOS,
+            router.Intent.RUTA,
+            router.Intent.REPORTE,
+            router.Intent.OFFLINE,
+        ):
             return self._respuesta_sin_sesion(entrada, evaluacion, datetime.now())
         tools = None
         resultado_verificado: str | None = None
@@ -561,7 +602,10 @@ class Orchestrator:
         # que recuerde, que es exactamente lo que esa precedencia prohíbe.
         if resultado_verificado is None and not tools and not con_imagen:
             fragmentos = Retriever(self.ctx.session).buscar(
-                entrada.texto, self.ctx.ahora, region=self._distrito_usuario()
+                entrada.texto,
+                self.ctx.ahora,
+                region=self._distrito_usuario(),
+                coleccion=self._coleccion_rag(entrada.texto),
             )
             if fragmentos:
                 resultado_verificado = como_contexto(fragmentos)
@@ -740,7 +784,11 @@ class Orchestrator:
         # §13.4: el invitado preguntó algo que necesitaba una herramienta y no
         # se ejecutó ninguna. La limitación la pone el backend; dejarla en manos
         # del modelo es cómo se acabó pidiendo una ubicación que no servía.
-        requiere_sesion = ruteo.necesita_herramienta and rol is None
+        requiere_sesion = (
+            rol is None
+            and ruteo.intent
+            in (router.Intent.RECURSOS, router.Intent.RUTA, router.Intent.REPORTE, router.Intent.OFFLINE)
+        )
         if hubo_ruta:
             limitacion = fx.RUTA_CONDICIONES_CAMBIAN
         elif requiere_sesion:

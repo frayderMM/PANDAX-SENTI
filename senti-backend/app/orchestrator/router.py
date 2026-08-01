@@ -73,7 +73,7 @@ _PATRONES: list[tuple[Intent, str]] = [
     (
         Intent.TELEFONOS,
         r"\b(numeros?|telefonos?|llama(?:r)?|contactar)\b.{0,60}"
-        r"\b(emergencia|bombero|policia|pnp|samu|salud|indeci|defensa civil|"
+        r"\b(emergencia|bomber[oa]s?|policia|pnp|samu|salud|indeci|defensa civil|"
         r"sutran|carretera|essalud)\b"
         r"|\bemergencias?\b.{0,35}\b(numeros?|telefonos?)\b",
     ),

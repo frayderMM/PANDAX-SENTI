@@ -112,6 +112,9 @@ class TestArgumentos:
     def test_consulta_telefono_no_se_manda_al_rag(self) -> None:
         assert rutear("¿Cuál es el número de emergencia de los bomberos?").intent is Intent.TELEFONOS
 
+    def test_consulta_telefono_acepta_plural_cotidiano(self) -> None:
+        assert rutear("¿cuál es el número de bomberos?").intent is Intent.TELEFONOS
+
     def test_reporte_extrae_la_via(self) -> None:
         a = argumentos_por_defecto(Intent.REPORTE, texto="¿la avenida Central está bloqueada?")
         assert "central" in a["via"].lower()
