@@ -99,6 +99,21 @@ class OfflineStore(private val context: Context) {
             ?.split(",")
             ?.filter { it.isNotBlank() }
             ?: emptyList()
+
+    /**
+     * Al cerrar sesión. El hilo y el paquete son de la cuenta que se fue, no
+     * del dispositivo: sin esto, entrar con otra cuenta en el mismo teléfono
+     * reanudaría el hilo de la persona anterior y le mostraría su plan
+     * familiar como si fuera propio.
+     */
+    suspend fun borrarSesion() {
+        context.dataStore.edit {
+            it.remove(clavePaquete)
+            it.remove(claveHilo)
+            it.remove(claveHiloUltimo)
+            it.remove(claveHistorial)
+        }
+    }
 }
 
 /**

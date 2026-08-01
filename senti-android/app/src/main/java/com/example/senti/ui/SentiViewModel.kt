@@ -4,13 +4,19 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.senti.data.Api
+import com.example.senti.data.AvisoConsentimientoResponse
+import com.example.senti.data.Finalidad
 import com.example.senti.data.OfflineStore
 import com.example.senti.data.Fuente
 import com.example.senti.data.Lugar
 import com.example.senti.data.PaqueteOffline
+import com.example.senti.data.PerfilEntrada
+import com.example.senti.data.PerfilResponse
+import com.example.senti.data.PreferenciasStore
 import com.example.senti.data.Punto
 import com.example.senti.data.RutaCalculada
 import com.example.senti.data.ReporteResumen
+import com.example.senti.data.TemaApp
 import com.example.senti.data.TextosFijos
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -102,15 +108,33 @@ data class SentiUiState(
      * que redacte el modelo.
      */
     val sinRutaTrasMarcar: String? = null,
+    /** Preferencia de tema, guardada en el dispositivo y no en la cuenta. */
+    val tema: TemaApp = TemaApp.SISTEMA,
+    val perfil: PerfilResponse? = null,
+    val cargandoPerfil: Boolean = false,
+    val guardandoPerfil: Boolean = false,
+    val perfilError: String? = null,
+    val perfilGuardado: Boolean = false,
+    /** §13.4: qué finalidades ya autorizó, para no volver a pedirlas cada vez. */
+    val consentimientoHogar: Boolean = false,
+    val consentimientoContacto: Boolean = false,
+    /** Aviso legal versionado de `/auth/aviso-consentimiento` (§13.4). */
+    val aviso: AvisoConsentimientoResponse? = null,
+    val cargandoAviso: Boolean = false,
 )
 
 class SentiViewModel(app: Application) : AndroidViewModel(app) {
 
     private val store = OfflineStore(app)
+    private val preferencias = PreferenciasStore(app)
     private val _estado = MutableStateFlow(SentiUiState())
     val estado: StateFlow<SentiUiState> = _estado.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            // El tema es del dispositivo: se carga siempre, haya o no sesión.
+            _estado.update { it.copy(tema = preferencias.leerTema()) }
+        }
         viewModelScope.launch {
             // El paquete offline se carga ANTES de intentar la red: si no hay
             // cobertura, la app ya tiene algo que mostrar en vez de una
@@ -543,6 +567,97 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
 
     fun marcarUbicacionPedida() {
         _estado.update { it.copy(ubicacionPedida = true) }
+    }
+
+    fun fijarTema(tema: TemaApp) = viewModelScope.launch {
+        preferencias.guardarTema(tema)
+        _estado.update { it.copy(tema = tema) }
+    }
+
+    fun cargarPerfil() = viewModelScope.launch {
+        _estado.update { it.copy(cargandoPerfil = true, perfilError = null) }
+        runCatching { Api.perfil() }
+            .onSuccess { p ->
+                _estado.update {
+                    it.copy(
+                        perfil = p,
+                        cargandoPerfil = false,
+                        // Si el backend ya tiene guardado un campo sensible o
+                        // un contacto, es porque el consentimiento existía
+                        // (los rechaza sin él, §13.4). Sin esto, reabrir el
+                        // perfil en una sesión nueva mostraría el interruptor
+                        // apagado y guardar sin tocar nada borraría lo que ya
+                        // estaba autorizado.
+                        consentimientoHogar = it.consentimientoHogar ||
+                            p.movilidadReducida || p.discapacidad || p.medicamentosHabituales,
+                        consentimientoContacto = it.consentimientoContacto ||
+                            p.contactoConfianzaConfigurado,
+                    )
+                }
+            }
+            .onFailure {
+                _estado.update {
+                    it.copy(cargandoPerfil = false, perfilError = "No se pudo cargar tu perfil.")
+                }
+            }
+    }
+
+    /**
+     * Marca autorizadas las finalidades sensibles de una vez, ANTES de mandar
+     * el formulario. El backend exige el consentimiento por separado (§13.4)
+     * y lo rechaza con 403 si falta; pedirlo aquí evita mandar el formulario a
+     * ciegas y que se pierda lo que la persona ya llenó si lo rechaza.
+     */
+    fun otorgarConsentimientoHogar(otorgado: Boolean) = viewModelScope.launch {
+        runCatching { Api.registrarConsentimiento(Finalidad.PERFIL_HOGAR, otorgado) }
+            .onSuccess { _estado.update { it.copy(consentimientoHogar = otorgado) } }
+    }
+
+    fun otorgarConsentimientoContacto(otorgado: Boolean) = viewModelScope.launch {
+        runCatching { Api.registrarConsentimiento(Finalidad.CONTACTO_CONFIANZA, otorgado) }
+            .onSuccess { _estado.update { it.copy(consentimientoContacto = otorgado) } }
+    }
+
+    fun guardarPerfil(datos: PerfilEntrada) = viewModelScope.launch {
+        _estado.update { it.copy(guardandoPerfil = true, perfilError = null, perfilGuardado = false) }
+        runCatching { Api.guardarPerfil(datos) }
+            .onSuccess {
+                _estado.update { it.copy(guardandoPerfil = false, perfilGuardado = true) }
+                cargarPerfil()
+            }
+            .onFailure {
+                // El 403 por falta de consentimiento (§13.2) no debería poder
+                // pasar aquí: la UI bloquea los campos sensibles y el de
+                // contacto de confianza hasta que se otorga. Si aun así falla,
+                // es red o sesión, no algo que un mensaje de detalle aclare.
+                _estado.update {
+                    it.copy(
+                        guardandoPerfil = false,
+                        perfilError = "No se pudo guardar el perfil. Verifica tu conexión.",
+                    )
+                }
+            }
+    }
+
+    fun descartarPerfilGuardado() = _estado.update { it.copy(perfilGuardado = false) }
+
+    fun cargarAvisoConsentimiento() = viewModelScope.launch {
+        _estado.update { it.copy(cargandoAviso = true) }
+        runCatching { Api.avisoConsentimiento() }
+            .onSuccess { a -> _estado.update { it.copy(aviso = a, cargandoAviso = false) } }
+            .onFailure { _estado.update { it.copy(cargandoAviso = false) } }
+    }
+
+    /**
+     * Cierra la sesión localmente. No hay endpoint de logout que invalidar —
+     * el token es un JWT sin estado en el servidor—, así que basta con
+     * olvidarlo aquí y borrar lo que quedó guardado de esta cuenta en el
+     * dispositivo. El tema se conserva: es del teléfono, no de la cuenta.
+     */
+    fun cerrarSesion() = viewModelScope.launch {
+        Api.token = null
+        store.borrarSesion()
+        _estado.update { SentiUiState(tema = it.tema) }
     }
 }
 

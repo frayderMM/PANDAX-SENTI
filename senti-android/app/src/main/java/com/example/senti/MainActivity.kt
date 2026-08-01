@@ -43,12 +43,18 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Gavel
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.text.BasicTextField
 import com.example.senti.ui.theme.Radios
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Backpack
@@ -82,6 +88,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -112,6 +119,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -124,6 +132,8 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.IconButton
 import androidx.compose.ui.draw.clip
+import com.example.senti.data.PerfilEntrada
+import com.example.senti.data.TemaApp
 import com.example.senti.data.Ubicacion
 import com.example.senti.ui.theme.EstadoVerde
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -157,12 +167,22 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            SENTITheme {
+            // El ViewModel se crea aquí y no dentro de PantallaSenti: el tema
+            // envuelve toda la pantalla, así que necesita el estado (para
+            // saber qué eligió la persona) antes de que exista nada dentro.
+            val vm: SentiViewModel = viewModel()
+            val estado by vm.estado.collectAsStateWithLifecycle()
+            val temaOscuro = when (estado.tema) {
+                TemaApp.CLARO -> false
+                TemaApp.OSCURO -> true
+                TemaApp.SISTEMA -> isSystemInDarkTheme()
+            }
+            SENTITheme(darkTheme = temaOscuro) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    PantallaSenti()
+                    PantallaSenti(vm = vm, estado = estado)
                 }
             }
         }
@@ -272,10 +292,11 @@ private fun decodificarImagen(context: Context, uri: Uri, maxDimension: Int): Bi
 }
 
 @Composable
-fun PantallaSenti(modifier: Modifier = Modifier) {
-    val vm: SentiViewModel = viewModel()
-    val estado by vm.estado.collectAsStateWithLifecycle()
-
+fun PantallaSenti(
+    modifier: Modifier = Modifier,
+    vm: SentiViewModel,
+    estado: com.example.senti.ui.SentiUiState,
+) {
     if (!estado.autenticado) {
         PantallaAcceso(
             modifier = modifier,
@@ -362,7 +383,7 @@ private fun PantallaPrincipal(
                 onCrearReporte = vm::crearReporte,
                 onCargarReportes = vm::cargarReportes,
             )
-            SeccionPrincipal.PERFIL -> PantallaPerfil(soloAbajo, estado)
+            SeccionPrincipal.PERFIL -> PantallaPerfil(soloAbajo, vm, estado)
             SeccionPrincipal.CHAT -> PantallaChat(soloAbajo, vm, estado)
         }
     }
@@ -456,6 +477,11 @@ private fun EncabezadoSenti(
     titulo: String,
     subtitulo: String? = null,
     accion: (@Composable () -> Unit)? = null,
+    // Cuando no es null, cambia el icono de marca por una flecha de volver.
+    // Las pantallas de configuración (perfil, términos, FAQ) cuelgan de
+    // "Tu perfil" y no son un destino propio de la barra inferior; necesitan
+    // cómo volver sin depender solo del botón físico/gesto de Android.
+    onVolver: (() -> Unit)? = null,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.primary,
@@ -483,20 +509,31 @@ private fun EncabezadoSenti(
                     .padding(start = 18.dp, end = 14.dp, top = 14.dp, bottom = 18.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Surface(
-                    color = Color.White.copy(alpha = 0.16f),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.size(42.dp),
-                ) {
-                    // El icono propio de SENTI, no un triángulo de peligro.
-                    // Ese triángulo es el símbolo con el que la app marca un
-                    // peligro real (§18); gastarlo en la cabecera de todas las
-                    // pantallas lo vacía de significado justo donde hace falta.
-                    Image(
-                        painter = painterResource(R.mipmap.ic_launcher_foreground),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                if (onVolver != null) {
+                    IconButton(onClick = onVolver, modifier = Modifier.size(42.dp)) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Volver",
+                            tint = Color.White,
+                        )
+                    }
+                } else {
+                    Surface(
+                        color = Color.White.copy(alpha = 0.16f),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.size(42.dp),
+                    ) {
+                        // El icono propio de SENTI, no un triángulo de
+                        // peligro. Ese triángulo es el símbolo con el que la
+                        // app marca un peligro real (§18); gastarlo en la
+                        // cabecera de todas las pantallas lo vacía de
+                        // significado justo donde hace falta.
+                        Image(
+                            painter = painterResource(R.mipmap.ic_launcher_foreground),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
                 Spacer(Modifier.width(13.dp))
                 Column(Modifier.weight(1f)) {
@@ -1552,11 +1589,44 @@ private fun TipoReporteChip(
     }
 }
 
+/**
+ * Las cuatro cosas que cuelgan de "Tu perfil" y no son un destino propio de
+ * la barra inferior: perfil del hogar, términos, preguntas frecuentes. No hay
+ * un sistema de navegación con pila en toda la app —cada pantalla resuelve su
+ * "volver" a mano, como ya hacía el mapa de ruta—, así que esto sigue el mismo
+ * patrón: un estado local que dice qué se ve, y un `BackHandler` que lo saca.
+ */
+private enum class VistaPerfil { MENU, PERFIL_HOGAR, TERMINOS, FAQ }
+
 @Composable
 private fun PantallaPerfil(
     modifier: Modifier = Modifier,
+    vm: SentiViewModel,
     estado: com.example.senti.ui.SentiUiState,
 ) {
+    var vista by remember { mutableStateOf(VistaPerfil.MENU) }
+    var confirmarCerrarSesion by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = vista != VistaPerfil.MENU) { vista = VistaPerfil.MENU }
+
+    when (vista) {
+        VistaPerfil.PERFIL_HOGAR -> {
+            LaunchedEffect(Unit) { vm.cargarPerfil() }
+            PantallaPerfilHogar(modifier, vm, estado, onVolver = { vista = VistaPerfil.MENU })
+            return
+        }
+        VistaPerfil.TERMINOS -> {
+            LaunchedEffect(Unit) { vm.cargarAvisoConsentimiento() }
+            PantallaTerminos(modifier, estado, onVolver = { vista = VistaPerfil.MENU })
+            return
+        }
+        VistaPerfil.FAQ -> {
+            PantallaFAQ(modifier, onVolver = { vista = VistaPerfil.MENU })
+            return
+        }
+        VistaPerfil.MENU -> Unit
+    }
+
     Column(modifier.fillMaxSize()) {
         EncabezadoSenti(
             titulo = "Tu perfil",
@@ -1588,6 +1658,31 @@ private fun PantallaPerfil(
                             paquete.sincronizadoAt.take(16).replace('T', ' '),
                     )
                 }
+            }
+            item {
+                FilaAccionPerfil(
+                    icono = Icons.Filled.Home,
+                    titulo = "Perfil del hogar",
+                    detalle = "Quiénes son y qué necesitan, para un plan a tu medida.",
+                    onClick = { vista = VistaPerfil.PERFIL_HOGAR },
+                )
+            }
+            item { FilaTema(estado.tema, onCambiar = vm::fijarTema) }
+            item {
+                FilaAccionPerfil(
+                    icono = Icons.Filled.Gavel,
+                    titulo = "Términos y condiciones",
+                    detalle = "Qué se guarda de ti, para qué y por cuánto tiempo.",
+                    onClick = { vista = VistaPerfil.TERMINOS },
+                )
+            }
+            item {
+                FilaAccionPerfil(
+                    icono = Icons.AutoMirrored.Filled.HelpOutline,
+                    titulo = "Preguntas frecuentes",
+                    detalle = "Qué es SENTI, qué no reemplaza y cómo funciona sin señal.",
+                    onClick = { vista = VistaPerfil.FAQ },
+                )
             }
             item {
                 // §13.2, donde el usuario lo va a leer y no en un enlace legal.
@@ -1622,6 +1717,129 @@ private fun PantallaPerfil(
                 }
             }
             estado.error?.let { item { AvisoError(it) } }
+            item {
+                FilaAccionPerfil(
+                    icono = Icons.AutoMirrored.Filled.Logout,
+                    titulo = "Cerrar sesión",
+                    destructivo = true,
+                    onClick = { confirmarCerrarSesion = true },
+                )
+            }
+        }
+    }
+
+    if (confirmarCerrarSesion) {
+        AlertDialog(
+            onDismissRequest = { confirmarCerrarSesion = false },
+            icon = { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null) },
+            title = { Text("¿Cerrar sesión?") },
+            text = { Text("Vas a salir de tu cuenta en este dispositivo.") },
+            confirmButton = {
+                TextButton(onClick = { confirmarCerrarSesion = false; vm.cerrarSesion() }) {
+                    Text("Cerrar sesión")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmarCerrarSesion = false }) { Text("Cancelar") }
+            },
+        )
+    }
+}
+
+/** Fila de menú con chevron, para las secciones que abren otra pantalla. */
+@Composable
+private fun FilaAccionPerfil(
+    icono: ImageVector,
+    titulo: String,
+    detalle: String? = null,
+    destructivo: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val color = if (destructivo) COLOR_ROJO else MaterialTheme.colorScheme.primary
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(Radios.tarjeta),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(color = color.copy(alpha = 0.12f), shape = RoundedCornerShape(12.dp)) {
+                Icon(
+                    icono,
+                    contentDescription = null,
+                    tint = color,
+                    modifier = Modifier.padding(9.dp).size(20.dp),
+                )
+            }
+            Spacer(Modifier.width(13.dp))
+            Column(Modifier.weight(1f)) {
+                Text(titulo, style = MaterialTheme.typography.titleMedium, color = color.takeIf { destructivo } ?: Color.Unspecified)
+                detalle?.let {
+                    Spacer(Modifier.height(2.dp))
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (!destructivo) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(17.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Selector de tema. Vive en el dispositivo, no en la cuenta (§ninguno: es una
+ * preferencia de accesibilidad y comodidad, no un dato personal), por eso se
+ * guarda en `PreferenciasStore` y sobrevive a cerrar sesión.
+ */
+@Composable
+private fun FilaTema(tema: TemaApp, onCambiar: (TemaApp) -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(Radios.tarjeta),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(15.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.Palette,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(9.dp).size(20.dp),
+                    )
+                }
+                Spacer(Modifier.width(13.dp))
+                Text("Tema", style = MaterialTheme.typography.titleMedium)
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OpcionTema("Sistema", tema == TemaApp.SISTEMA, Modifier.weight(1f)) { onCambiar(TemaApp.SISTEMA) }
+                OpcionTema("Claro", tema == TemaApp.CLARO, Modifier.weight(1f)) { onCambiar(TemaApp.CLARO) }
+                OpcionTema("Oscuro", tema == TemaApp.OSCURO, Modifier.weight(1f)) { onCambiar(TemaApp.OSCURO) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OpcionTema(texto: String, seleccionado: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    if (seleccionado) {
+        Button(onClick = onClick, shape = RoundedCornerShape(Radios.chip), modifier = modifier) {
+            Text(texto, style = MaterialTheme.typography.labelMedium)
+        }
+    } else {
+        OutlinedButton(onClick = onClick, shape = RoundedCornerShape(Radios.chip), modifier = modifier) {
+            Text(texto, style = MaterialTheme.typography.labelMedium)
         }
     }
 }
@@ -1655,6 +1873,497 @@ private fun FilaPerfil(
                 Text(
                     detalle,
                     style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Formulario del perfil del hogar (§13.2, §14).
+ *
+ * Los tres campos de salud/discapacidad y el teléfono de confianza no se
+ * pueden tocar sin marcar antes su casilla de autorización: el backend los
+ * rechaza con 403 si falta el consentimiento de esa finalidad (§13.4), y
+ * pedirlo aquí primero evita mandar el formulario a ciegas y perder lo que la
+ * persona ya llenó si lo rechaza.
+ */
+@Composable
+private fun PantallaPerfilHogar(
+    modifier: Modifier = Modifier,
+    vm: SentiViewModel,
+    estado: com.example.senti.ui.SentiUiState,
+    onVolver: () -> Unit,
+) {
+    val perfil = estado.perfil
+    var distrito by remember(perfil) { mutableStateOf(perfil?.distrito.orEmpty()) }
+    var zona by remember(perfil) { mutableStateOf(perfil?.zonaAproximada.orEmpty()) }
+    var integrantes by remember(perfil) { mutableStateOf((perfil?.integrantes ?: 1).toString()) }
+    var ninos by remember(perfil) { mutableStateOf((perfil?.ninos ?: 0).toString()) }
+    var adultosMayores by remember(perfil) { mutableStateOf((perfil?.adultosMayores ?: 0).toString()) }
+    var mascotas by remember(perfil) { mutableStateOf((perfil?.mascotas ?: 0).toString()) }
+    var vehiculo by remember(perfil) { mutableStateOf(perfil?.vehiculo ?: false) }
+    var medioTransporte by remember { mutableStateOf("") }
+    var puntoReunion by remember { mutableStateOf("") }
+    var mochilaLista by remember(perfil) { mutableStateOf(perfil?.mochilaLista ?: false) }
+    var movilidadReducida by remember(perfil) { mutableStateOf(perfil?.movilidadReducida ?: false) }
+    var discapacidad by remember(perfil) { mutableStateOf(perfil?.discapacidad ?: false) }
+    var medicamentos by remember(perfil) { mutableStateOf(perfil?.medicamentosHabituales ?: false) }
+    var contactoTelefono by remember { mutableStateOf("") }
+
+    Column(modifier.fillMaxSize()) {
+        EncabezadoSenti(
+            titulo = "Perfil del hogar",
+            subtitulo = "Opcional. Sin él, SENTI da recomendaciones generales.",
+            onVolver = onVolver,
+        )
+        if (estado.cargandoPerfil && perfil == null) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else {
+            LazyColumn(
+                Modifier.fillMaxSize().padding(horizontal = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = PaddingValues(vertical = 14.dp, horizontal = 0.dp),
+            ) {
+                item {
+                    Text("¿Dónde vives?", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = distrito,
+                        onValueChange = { distrito = it },
+                        label = { Text("Distrito") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = zona,
+                        onValueChange = { zona = it },
+                        label = { Text("Zona aproximada (opcional)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
+                item {
+                    Text("¿Quiénes son?", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CampoNumero("Integrantes", integrantes, { integrantes = it }, Modifier.weight(1f))
+                        CampoNumero("Niños", ninos, { ninos = it }, Modifier.weight(1f))
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CampoNumero("Adultos mayores", adultosMayores, { adultosMayores = it }, Modifier.weight(1f))
+                        CampoNumero("Mascotas", mascotas, { mascotas = it }, Modifier.weight(1f))
+                    }
+                }
+
+                item {
+                    Card(colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )) {
+                        Column(Modifier.padding(14.dp)) {
+                            FilaInterruptor("Tenemos vehículo", marcado = vehiculo, onMarcadoChange = { vehiculo = it })
+                            if (vehiculo) {
+                                Spacer(Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = medioTransporte,
+                                    onValueChange = { medioTransporte = it },
+                                    label = { Text("¿Cuál? (auto, moto, bicicleta…)") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            FilaInterruptor("Mochila de emergencia lista", marcado = mochilaLista, onMarcadoChange = { mochilaLista = it })
+                        }
+                    }
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = puntoReunion,
+                        onValueChange = { puntoReunion = it },
+                        label = { Text("Punto de reunión familiar (opcional)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2,
+                    )
+                }
+
+                item {
+                    Card(colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text("Movilidad y salud", style = MaterialTheme.typography.titleSmall)
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Sin nombres ni diagnósticos: solo si hay que ajustar rutas " +
+                                    "o el plan por esto. Se guarda solo si lo autorizas aquí.",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            FilaInterruptor(
+                                "Autorizo guardar esta información",
+                                marcado = estado.consentimientoHogar,
+                                onMarcadoChange = { otorgado ->
+                                    vm.otorgarConsentimientoHogar(otorgado)
+                                    if (!otorgado) {
+                                        movilidadReducida = false
+                                        discapacidad = false
+                                        medicamentos = false
+                                    }
+                                },
+                            )
+                            if (estado.consentimientoHogar) {
+                                Spacer(Modifier.height(4.dp))
+                                FilaInterruptor("Movilidad reducida", marcado = movilidadReducida, onMarcadoChange = { movilidadReducida = it })
+                                FilaInterruptor("Discapacidad", marcado = discapacidad, onMarcadoChange = { discapacidad = it })
+                                FilaInterruptor("Medicamentos habituales", marcado = medicamentos, onMarcadoChange = { medicamentos = it })
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Card(colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text("Contacto de confianza", style = MaterialTheme.typography.titleSmall)
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Se guarda cifrado. Nunca le escribimos sin que tú lo pidas.",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            FilaInterruptor(
+                                "Autorizo guardar un contacto",
+                                marcado = estado.consentimientoContacto,
+                                onMarcadoChange = { otorgado ->
+                                    vm.otorgarConsentimientoContacto(otorgado)
+                                    if (!otorgado) contactoTelefono = ""
+                                },
+                            )
+                            if (estado.consentimientoContacto) {
+                                Spacer(Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = contactoTelefono,
+                                    onValueChange = { contactoTelefono = it },
+                                    label = { Text("Teléfono de tu contacto") },
+                                    // El backend nunca devuelve el teléfono ya
+                                    // guardado (va cifrado), solo si existe
+                                    // uno. Sin este aviso, un campo vacío con
+                                    // el interruptor encendido parece decir
+                                    // "no hay nada guardado" cuando sí lo hay.
+                                    supportingText = if (perfil?.contactoConfianzaConfigurado == true) {
+                                        { Text("Ya tienes uno guardado. Déjalo vacío para conservarlo.") }
+                                    } else null,
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Button(
+                        onClick = {
+                            vm.guardarPerfil(
+                                PerfilEntrada(
+                                    distrito = distrito.trim().ifBlank { null },
+                                    zonaAproximada = zona.trim().ifBlank { null },
+                                    integrantes = integrantes.toIntOrNull() ?: 1,
+                                    ninos = ninos.toIntOrNull() ?: 0,
+                                    adultosMayores = adultosMayores.toIntOrNull() ?: 0,
+                                    mascotas = mascotas.toIntOrNull() ?: 0,
+                                    movilidadReducida = movilidadReducida && estado.consentimientoHogar,
+                                    discapacidad = discapacidad && estado.consentimientoHogar,
+                                    medicamentosHabituales = medicamentos && estado.consentimientoHogar,
+                                    vehiculo = vehiculo,
+                                    medioTransporte = medioTransporte.trim().ifBlank { null },
+                                    puntoReunionDescripcion = puntoReunion.trim().ifBlank { null },
+                                    contactoConfianzaTelefono = contactoTelefono.trim()
+                                        .ifBlank { null }
+                                        ?.takeIf { estado.consentimientoContacto },
+                                    mochilaLista = mochilaLista,
+                                )
+                            )
+                        },
+                        enabled = !estado.guardandoPerfil,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        if (estado.guardandoPerfil) {
+                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text("Guardar perfil")
+                    }
+                    if (estado.perfilGuardado) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("Perfil guardado.", style = MaterialTheme.typography.bodySmall, color = COLOR_VERDE)
+                    }
+                    estado.perfilError?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = COLOR_ROJO)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CampoNumero(
+    etiqueta: String,
+    valor: String,
+    onValorChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedTextField(
+        value = valor,
+        onValueChange = { nuevo -> if (nuevo.length <= 2 && nuevo.all(Char::isDigit)) onValorChange(nuevo) },
+        label = { Text(etiqueta) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun FilaInterruptor(
+    titulo: String,
+    detalle: String? = null,
+    marcado: Boolean,
+    onMarcadoChange: (Boolean) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(titulo, style = MaterialTheme.typography.bodyMedium)
+            detalle?.let {
+                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Switch(checked = marcado, onCheckedChange = onMarcadoChange)
+    }
+}
+
+/**
+ * El aviso legal versionado de `/auth/aviso-consentimiento` (§13.4): el mismo
+ * texto que ve quien entra por WhatsApp, no una redacción propia de la app.
+ * Tener dos versiones distintas del mismo aviso sería peor que no tener
+ * ninguna, porque cada una podría decir algo distinto sobre lo mismo.
+ */
+@Composable
+private fun PantallaTerminos(
+    modifier: Modifier = Modifier,
+    estado: com.example.senti.ui.SentiUiState,
+    onVolver: () -> Unit,
+) {
+    Column(modifier.fillMaxSize()) {
+        EncabezadoSenti(
+            titulo = "Términos y condiciones",
+            subtitulo = "El mismo aviso que ve quien entra por WhatsApp.",
+            onVolver = onVolver,
+        )
+        val aviso = estado.aviso
+        if (estado.cargandoAviso && aviso == null) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else if (aviso == null) {
+            Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                Text(
+                    "No se pudo cargar el aviso. Verifica tu conexión.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        } else {
+            LazyColumn(
+                Modifier.fillMaxSize().padding(horizontal = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(vertical = 14.dp),
+            ) {
+                item {
+                    Text(
+                        "Versión ${aviso.version}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(Radios.tarjeta),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            aviso.textoWhatsapp,
+                            Modifier.padding(14.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+                item {
+                    Text("Para qué se usa cada dato", style = MaterialTheme.typography.titleMedium)
+                }
+                items(aviso.finalidades) { f ->
+                    Surface(
+                        shape = RoundedCornerShape(Radios.tarjeta),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.padding(14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    etiquetaFinalidad(f.purpose),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                if (f.obligatoria) {
+                                    Surface(
+                                        shape = RoundedCornerShape(50),
+                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                    ) {
+                                        Text(
+                                            "OBLIGATORIA",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                f.descripcion,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                item {
+                    Text(
+                        aviso.nota,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun etiquetaFinalidad(purpose: String): String = when (purpose) {
+    "mensajes" -> "Tus mensajes"
+    "ubicacion_exacta" -> "Tu ubicación exacta"
+    "fotografia" -> "Tus fotos"
+    "perfil_hogar" -> "Perfil del hogar"
+    "contacto_confianza" -> "Contacto de confianza"
+    else -> purpose.replace("_", " ").replaceFirstChar { it.uppercase() }
+}
+
+private data class PreguntaFrecuente(val pregunta: String, val respuesta: String)
+
+/**
+ * Contenido fijo y no del modelo: son respuestas sobre cómo funciona la app,
+ * no orientación ante una emergencia, así que no hace falta el backend. Cada
+ * una describe un comportamiento que ya existe en la app, no una promesa
+ * nueva — igual que el resto de textos fijos de SENTI.
+ */
+private val PREGUNTAS_FRECUENTES = listOf(
+    PreguntaFrecuente(
+        "¿SENTI reemplaza a Defensa Civil, Bomberos o la Policía?",
+        "No, nunca. SENTI orienta; el canal oficial del Estado es quien confirma y " +
+            "actúa. En una emergencia real, llama primero: 115 Defensa Civil, " +
+            "116 Bomberos, 105 Policía, 106 SAMU.",
+    ),
+    PreguntaFrecuente(
+        "¿Qué significa que un reporte esté \"Probable\" o \"Confirmado\"?",
+        "Es el nivel de confianza, no una opinión. \"Confirmado por el municipio\" " +
+            "viene de una fuente oficial. \"Validado\" y \"Probable\" son reportes " +
+            "ciudadanos sin esa confirmación — se muestran igual, pero con esa " +
+            "diferencia siempre visible en el color y en el texto.",
+    ),
+    PreguntaFrecuente(
+        "¿Qué pasa si no tengo señal?",
+        "La app guarda un paquete básico —teléfonos de emergencia, la última " +
+            "alerta descargada y tu plan familiar— desde la última vez que hubo " +
+            "conexión, y siempre muestra la fecha de esa descarga. Nunca presenta " +
+            "esa información vieja como si fuera de ahora.",
+    ),
+    PreguntaFrecuente(
+        "¿Alguien más puede ver mis reportes o quién los hizo?",
+        "Los reportes ciudadanos se muestran sin el nombre de quien los hizo, y " +
+            "los datos de tu perfil del hogar no se comparten con otros usuarios.",
+    ),
+    PreguntaFrecuente(
+        "¿Las fotos que envío por el chat se guardan?",
+        "No se guardan en ningún servidor: se usan solo para analizar ese mensaje.",
+    ),
+    PreguntaFrecuente(
+        "¿Puedo negarme a compartir algún dato?",
+        "Sí. Cada dato se pide por separado y negarte no bloquea el servicio " +
+            "básico: protocolos, teléfonos e información oficial siguen " +
+            "disponibles. Revisa qué autorizaste en \"Términos y condiciones\".",
+    ),
+)
+
+@Composable
+private fun PantallaFAQ(modifier: Modifier = Modifier, onVolver: () -> Unit) {
+    Column(modifier.fillMaxSize()) {
+        EncabezadoSenti(
+            titulo = "Preguntas frecuentes",
+            subtitulo = "Cómo funciona SENTI y qué límites tiene.",
+            onVolver = onVolver,
+        )
+        LazyColumn(
+            Modifier.fillMaxSize().padding(horizontal = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(vertical = 14.dp),
+        ) {
+            items(PREGUNTAS_FRECUENTES) { PreguntaFrecuenteFila(it) }
+        }
+    }
+}
+
+@Composable
+private fun PreguntaFrecuenteFila(pf: PreguntaFrecuente) {
+    var abierta by remember { mutableStateOf(false) }
+    Surface(
+        onClick = { abierta = !abierta },
+        shape = RoundedCornerShape(Radios.tarjeta),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(15.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(pf.pregunta, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Icon(
+                    if (abierta) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            if (abierta) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    pf.respuesta,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

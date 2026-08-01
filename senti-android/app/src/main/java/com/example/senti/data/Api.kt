@@ -9,6 +9,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
@@ -102,6 +103,35 @@ object Api {
     suspend fun perfil(): PerfilResponse = client.get("$baseUrl/perfil") {
         token?.let { header("Authorization", "Bearer $it") }
     }.body()
+
+    /**
+     * §13.2: guarda el perfil del hogar. El backend rechaza con 403 los campos
+     * sensibles (movilidad reducida, discapacidad, medicamentos) y el contacto
+     * de confianza si no hay consentimiento previo para esa finalidad — hay
+     * que pedirlo con [registrarConsentimiento] antes de reintentar.
+     */
+    suspend fun guardarPerfil(datos: PerfilEntrada): GuardarPerfilResponse =
+        client.put("$baseUrl/perfil") {
+            contentType(ContentType.Application.Json)
+            token?.let { header("Authorization", "Bearer $it") }
+            setBody(datos)
+        }.body()
+
+    /**
+     * §13.4: el texto exacto y versionado que se le muestra a alguien antes de
+     * aceptar cada finalidad. No es texto de la app: es el mismo aviso legal
+     * que ve quien entra por WhatsApp, para no tener dos versiones distintas
+     * de lo mismo.
+     */
+    suspend fun avisoConsentimiento(): AvisoConsentimientoResponse =
+        client.get("$baseUrl/auth/aviso-consentimiento").body()
+
+    suspend fun registrarConsentimiento(purpose: String, granted: Boolean): ConsentimientoResponse =
+        client.post("$baseUrl/auth/consentimiento") {
+            contentType(ContentType.Application.Json)
+            token?.let { header("Authorization", "Bearer $it") }
+            setBody(ConsentimientoEntrada(purpose, granted))
+        }.body()
 
     /**
      * §26: el paquete que la app conserva sin conexión.
@@ -407,14 +437,75 @@ data class Fuente(
 @Serializable
 data class PerfilResponse(
     @SerialName("tiene_perfil") val tienePerfil: Boolean,
+    val nota: String? = null,
     val distrito: String? = null,
-    @SerialName("adultos_mayores") val adultosMayores: Int = 0,
+    @SerialName("zona_aproximada") val zonaAproximada: String? = null,
+    val integrantes: Int = 1,
     val ninos: Int = 0,
-    @SerialName("movilidad_reducida") val movilidadReducida: Boolean = false,
+    @SerialName("adultos_mayores") val adultosMayores: Int = 0,
     val mascotas: Int = 0,
+    @SerialName("movilidad_reducida") val movilidadReducida: Boolean = false,
+    val discapacidad: Boolean = false,
+    @SerialName("medicamentos_habituales") val medicamentosHabituales: Boolean = false,
     val vehiculo: Boolean = false,
+    @SerialName("punto_reunion_configurado") val puntoReunionConfigurado: Boolean = false,
+    @SerialName("mochila_lista") val mochilaLista: Boolean = false,
+    @SerialName("contacto_confianza_configurado") val contactoConfianzaConfigurado: Boolean = false,
+)
+
+/**
+ * Entrada de `PUT /perfil`. Todos opcionales o con valor por defecto porque el
+ * perfil es opcional (§13.2): guardar solo el distrito y dejar el resto en
+ * blanco tiene que funcionar igual que rellenarlo entero.
+ */
+@Serializable
+data class PerfilEntrada(
+    val distrito: String? = null,
+    @SerialName("zona_aproximada") val zonaAproximada: String? = null,
+    val integrantes: Int = 1,
+    val ninos: Int = 0,
+    @SerialName("adultos_mayores") val adultosMayores: Int = 0,
+    val mascotas: Int = 0,
+    @SerialName("movilidad_reducida") val movilidadReducida: Boolean = false,
+    val discapacidad: Boolean = false,
+    @SerialName("medicamentos_habituales") val medicamentosHabituales: Boolean = false,
+    val vehiculo: Boolean = false,
+    @SerialName("medio_transporte") val medioTransporte: String? = null,
+    @SerialName("punto_reunion_descripcion") val puntoReunionDescripcion: String? = null,
+    @SerialName("contacto_confianza_telefono") val contactoConfianzaTelefono: String? = null,
     @SerialName("mochila_lista") val mochilaLista: Boolean = false,
 )
+
+@Serializable
+data class GuardarPerfilResponse(val ok: Boolean, val distrito: String? = null)
+
+/** Una finalidad del §13.4: por qué se pide cada dato y por cuánto se guarda. */
+@Serializable
+data class FinalidadConsentimiento(
+    val purpose: String,
+    val obligatoria: Boolean,
+    val descripcion: String,
+)
+
+@Serializable
+data class AvisoConsentimientoResponse(
+    val version: String,
+    @SerialName("texto_whatsapp") val textoWhatsapp: String,
+    val finalidades: List<FinalidadConsentimiento> = emptyList(),
+    val nota: String,
+)
+
+@Serializable
+data class ConsentimientoEntrada(val purpose: String, val granted: Boolean)
+
+@Serializable
+data class ConsentimientoResponse(val purpose: String, val granted: Boolean, val version: String)
+
+/** Valores de [ConsentimientoEntrada.purpose] (`ConsentPurpose` en el backend). */
+object Finalidad {
+    const val PERFIL_HOGAR = "perfil_hogar"
+    const val CONTACTO_CONFIANZA = "contacto_confianza"
+}
 
 @Serializable
 data class PaqueteOffline(
