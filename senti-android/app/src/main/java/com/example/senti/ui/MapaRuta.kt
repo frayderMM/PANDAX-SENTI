@@ -110,9 +110,6 @@ private fun distanciaMetros(lat1: Double, lon1: Double, lat2: Double, lon2: Doub
  * nunca el portador de la instrucción — los pasos escritos siguen siendo la
  * respuesta completa—, así que esta pantalla se puede cerrar sin perder nada.
  *
- * @param onMarcarBloqueo se llama con el punto que el usuario toca cuando está
- *   en modo marcado. Marcar no cierra ninguna vía: manda un reporte sin
- *   confirmar, que el §21.2 deja penalizar pero no excluir.
  */
 @SuppressLint("MissingPermission")
 @Composable
@@ -120,7 +117,6 @@ fun MapaRuta(
     ruta: RutaCalculada,
     miUbicacion: Punto?,
     onCerrar: () -> Unit,
-    onMarcarBloqueo: (Punto) -> Unit,
     onRecalcular: (List<Punto>, Punto?) -> Unit,
     recalculando: Boolean,
     modoMarcadoInicial: Boolean = false,
@@ -224,7 +220,6 @@ fun MapaRuta(
                 when (modo) {
                     ModoMapa.ATASCO -> {
                         misMarcas = misMarcas + punto
-                        onMarcarBloqueo(punto)
                     }
                     // El destino es uno solo: cada toque reemplaza al anterior
                     // en vez de acumular. Marcar dos sitios a los que ir no
@@ -484,8 +479,8 @@ private fun PanelInferiorMapa(
                 // Se dice aquí y no en un aviso legal al final: quien marca
                 // tiene que saber que no está cerrando la calle para nadie.
                 Text(
-                    "Se envía como reporte sin confirmar. No cierra la vía hasta " +
-                        "que lo valide la municipalidad.",
+                    "Solo se usa para recalcular esta ruta. No se publica ni se " +
+                        "registra como reporte.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

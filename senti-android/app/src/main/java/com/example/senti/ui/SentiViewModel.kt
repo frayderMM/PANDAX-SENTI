@@ -293,16 +293,6 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * El usuario marca una calle por la que no se puede pasar.
-     *
-     * Entra como reporte sin confirmar y no como cierre. El §6 reserva cerrar
-     * una vía al operador municipal o a una fuente oficial, y el §21.2 deja
-     * que un reporte penalice el paso pero nunca lo excluya. Que lo haya
-     * marcado quien está justo ahí no cambia eso: sigue siendo una sola voz, y
-     * el sistema no puede distinguir a quien ve un derrumbe de quien ve un
-     * charco. La diferencia la pone la validación, no la cercanía.
-     */
-    /**
      * Recalcula la ruta esquivando lo que el usuario marcó.
      *
      * Se hace a petición suya y no automáticamente al marcar: marcar tres
@@ -370,24 +360,6 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun descartarAvisoSinRuta() = _estado.update { it.copy(sinRutaTrasMarcar = null) }
-
-    fun marcarBloqueo(lat: Double, lon: Double) = viewModelScope.launch {
-        runCatching {
-            Api.crearReporte(
-                tipo = "via_bloqueada",
-                descripcion = "Vía marcada como intransitable desde el mapa.",
-                lat = lat,
-                lon = lon,
-                direccionAproximada = null,
-                distrito = null,
-                fotoBase64 = null,
-            )
-        }.onFailure { e ->
-            _estado.update {
-                it.copy(error = "No se pudo enviar la marca: ${e.message ?: "sin conexión"}")
-            }
-        }
-    }
 
     fun crearReporte(
         tipo: String,

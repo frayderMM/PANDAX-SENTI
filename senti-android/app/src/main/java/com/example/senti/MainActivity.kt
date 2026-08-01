@@ -346,7 +346,6 @@ private fun PantallaPrincipal(
             ruta = enMapa,
             miUbicacion = miUbicacion,
             onCerrar = vm::cerrarMapa,
-            onMarcarBloqueo = { vm.marcarBloqueo(it.lat, it.lon) },
             onRecalcular = vm::recalcularRuta,
             recalculando = estado.recalculandoRuta,
             modoMarcadoInicial = estado.mapaEnModoMarcado,

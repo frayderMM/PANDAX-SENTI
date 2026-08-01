@@ -117,9 +117,9 @@ object Api {
     /**
      * Recalcula la ruta esquivando lo que el usuario marcó en el mapa.
      *
-     * Los puntos valen para esta petición y para nadie más: no cierran la vía
-     * (§6, §21.2). El reporte que se manda en paralelo sigue su camino normal
-     * y entra sin confirmar.
+     * Los puntos valen solo para esta petición y para nadie más: no cierran la
+     * vía ni crean un reporte (§6, §21.2). Para publicar un reporte hay que
+     * usar explícitamente el formulario correspondiente.
      */
     suspend fun recalcularRuta(
         origenLat: Double,
