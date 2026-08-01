@@ -83,6 +83,9 @@ def test_no_tengo_senal_usa_instruccion_fija() -> None:
 
 
 def test_rag_de_seguimiento_conserva_el_contexto_del_hilo() -> None:
-    assert Orchestrator._coleccion_rag(
-        "Hay agua entrando a mi casa. ¿Sigue siendo peligroso cruzar por ahí?"
-    ) == "inundacion"
+    """El pipeline concatena el turno anterior antes de consultar el RAG."""
+    import inspect
+
+    fuente = inspect.getsource(Orchestrator._respuesta_con_modelo)
+    assert 'entrada.contexto_previo, entrada.texto' in fuente
+    assert 'coleccion=' not in fuente

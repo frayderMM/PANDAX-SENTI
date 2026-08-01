@@ -378,30 +378,6 @@ class Orchestrator:
             advertencias=adaptado.advertencias or [],
         )
 
-    @staticmethod
-    def _coleccion_rag(texto: str) -> str | None:
-        """Limita el RAG al protocolo del tema preguntado.
-
-        La similitud semántica por sí sola puede considerar "teléfonos" de una
-        mochila cercanos a una consulta de bomberos. La colección explícita
-        mantiene juntos pregunta y protocolo, y evita mezclar inundación,
-        huaico, incendio y preparación familiar.
-        """
-        n = normalize(texto)
-        if re.search(r"\bmochila\b|\bkit de emergencia\b|\bque llevo\b", n):
-            return "mochila"
-        if re.search(r"\blluvia\b|\bllover\b|\bpronostico\b|\balerta amarilla\b", n):
-            return "lluvia"
-        if re.search(r"\bhuaico\b|\bquebrada\b|\bdeslizamiento\b", n):
-            return "huaico"
-        if re.search(r"\binundacion\b|\bagua entrando\b|\binundad[oa]\b", n):
-            return "inundacion"
-        if re.search(r"\bincendio\b|\bfuego\b|\bhumo\b", n):
-            return "incendio"
-        if re.search(r"\bplan familiar\b|\bpunto de reunion\b", n):
-            return "primeros pasos"
-        return None
-
     # ── Camino con modelo ─────────────────────────────────────────────────
     def _respuesta_con_modelo(
         self, evaluacion: UrgencyAssessment, entrada: EntradaUsuario
@@ -608,7 +584,6 @@ class Orchestrator:
                 consulta_rag,
                 self.ctx.ahora,
                 region=self._distrito_usuario(),
-                coleccion=self._coleccion_rag(consulta_rag),
             )
             if fragmentos:
                 resultado_verificado = como_contexto(fragmentos)
