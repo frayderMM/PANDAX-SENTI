@@ -96,6 +96,46 @@ class ReporteSoloExplicitoTest {
     }
 
     @Test
+    fun `la sesion se lee antes de la carga pesada del disco`() {
+        // Regresión. La lectura de la sesión estaba dentro de la misma
+        // corrutina que copia los 64 MB de teselas del APK, así que durante
+        // ese rato el estado decía "no hay sesión guardada" y el login se
+        // pintaba SIN el botón de entrar sin conexión. Justo lo que alguien
+        // sin cobertura necesita, ausente durante decenas de segundos.
+        //
+        // El invariante: la sesión se publica antes de arrancar la corrutina.
+        val fuente = sinComentarios(leer("ModoOfflineViewModel.kt"))
+
+        val posSesion = fuente.indexOf("sesionSegura.leer()")
+        val posCorrutina = fuente.indexOf("viewModelScope.launch")
+
+        assertTrue("no se encontró la lectura de la sesión", posSesion >= 0)
+        assertTrue("no se encontró la corrutina de carga", posCorrutina >= 0)
+        assertTrue(
+            "la sesión debe leerse antes de lanzar la carga pesada, " +
+                "o el botón de entrar sin conexión llega tarde",
+            posSesion < posCorrutina,
+        )
+    }
+
+    @Test
+    fun `la copia de los packs no bloquea el hilo principal`() {
+        // El otro lado de la misma moneda: leer la sesión es barato y va
+        // síncrono, pero copiar los packs son decenas de megas y tiene que
+        // seguir fuera del hilo principal o es un ANR en gama baja.
+        val fuente = sinComentarios(leer("ModoOfflineViewModel.kt"))
+
+        val posIO = fuente.indexOf("Dispatchers.IO")
+        val posPacks = fuente.indexOf("prepararPacks")
+
+        assertTrue("no se encontró el cambio a Dispatchers.IO", posIO >= 0)
+        assertTrue(
+            "prepararPacks debe ejecutarse dentro del bloque de Dispatchers.IO",
+            posPacks > posIO,
+        )
+    }
+
+    @Test
     fun `la sesion guardada no tiene ningun campo de contrasena`() {
         // Complementa a SesionOfflineTest desde el otro lado: allí se mira el
         // JSON que sale, aquí que el modelo no lo declare siquiera.

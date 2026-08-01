@@ -37,6 +37,14 @@ data class EstadoOffline(
     /** Sesión guardada del último login online, si la hay. */
     val sesion: SesionLocal? = null,
     val avisoSync: String? = null,
+    /**
+     * Si el mapa y las guías ya terminaron de cargarse del disco.
+     *
+     * La primera vez esto tarda: hay que copiar los packs de teselas del APK.
+     * Se expone para que la pantalla diga "preparando el mapa" en vez de
+     * enseñar un mapa vacío que parezca que no hay datos.
+     */
+    val preparado: Boolean = false,
 )
 
 /**
@@ -57,11 +65,27 @@ class ModoOfflineViewModel(app: Application) : AndroidViewModel(app) {
     val estado: StateFlow<EstadoOffline> = _estado.asStateFlow()
 
     init {
+        // La sesión se lee AQUÍ, síncrona, y no dentro de la corrutina de
+        // abajo. Es lo que decide la primera pantalla: sin ella el login se
+        // dibuja sin el botón de entrar sin conexión.
+        //
+        // Estaba junto al resto y era un fallo con consecuencias: la corrutina
+        // copia los 64 MB de teselas del APK la primera vez, y hasta que
+        // terminaba el estado decía "no hay sesión guardada". En un teléfono
+        // de gama baja eso son decenas de segundos en los que alguien sin
+        // cobertura solo veía un formulario que no podía completar.
+        //
+        // Leerlo aquí cuesta lo que cuesta abrir un SharedPreferences y
+        // descifrar un texto corto con el Keystore: microsegundos. Es la misma
+        // decisión que ya toma SentiViewModel con la suya.
+        _estado.update {
+            it.copy(sesion = sesionSegura.leer(), hayRed = Red.hay(app))
+        }
+
         viewModelScope.launch {
-            // Todo esto toca disco: leer el paquete, parsear las guías y, la
-            // primera vez, copiar decenas de megas de teselas del APK. En el
-            // hilo principal eso es un ANR garantizado en un teléfono de gama
-            // baja, que es el objetivo de esta app.
+            // Esto sí es pesado: leer el paquete, parsear las guías y, la
+            // primera vez, copiar decenas de megas del APK. En el hilo
+            // principal sería un ANR garantizado.
             val cargado = withContext(Dispatchers.IO) {
                 Triple(
                     almacen.leer(),
@@ -76,8 +100,7 @@ class ModoOfflineViewModel(app: Application) : AndroidViewModel(app) {
                     motivoSinPaquete = (lectura as? LecturaZona.Corrupto)?.motivo,
                     guias = guias,
                     packs = packs,
-                    hayRed = Red.hay(app),
-                    sesion = sesionSegura.leer(),
+                    preparado = true,
                 )
             }
         }

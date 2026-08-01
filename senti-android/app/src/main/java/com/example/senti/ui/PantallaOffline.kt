@@ -83,6 +83,7 @@ fun PantallaOffline(
     miUbicacion: Punto?,
     sincronizando: Boolean,
     hayRed: Boolean,
+    preparado: Boolean,
     avisoSync: String?,
     onSincronizar: () -> Unit,
     onSalir: () -> Unit,
@@ -116,7 +117,16 @@ fun PantallaOffline(
         ) {
             BarraSincronizacion(paquete, sincronizando, hayRed, onSincronizar)
 
-            if (packs == null) {
+            if (!preparado) {
+                // La primera vez hay que copiar 64 MB del APK al
+                // almacenamiento. Decirlo evita que ese rato se lea como
+                // "no hay mapa de esta zona", que es lo contrario.
+                Spacer(Modifier.height(8.dp))
+                AvisoOffline(
+                    "Preparando el mapa por primera vez. Solo ocurre después de " +
+                        "instalar la app."
+                )
+            } else if (packs == null) {
                 Spacer(Modifier.height(8.dp))
                 AvisoOffline(
                     "El mapa base no está disponible en esta instalación. " +
@@ -175,7 +185,7 @@ fun PantallaOffline(
         // Sin paquete descargado, el texto exacto que pide el requisito. Va
         // sobre el mapa y no en su lugar: el mapa base sigue sirviendo para
         // orientarse aunque no haya datos de la zona.
-        if (paquete == null && motivoSinPaquete == null) {
+        if (paquete == null && motivoSinPaquete == null && preparado) {
             Surface(
                 color = Color(0xE6101418),
                 shape = RoundedCornerShape(12.dp),

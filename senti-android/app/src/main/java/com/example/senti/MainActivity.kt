@@ -263,6 +263,7 @@ fun PantallaSenti(modifier: Modifier = Modifier) {
             },
             sincronizando = offline.sincronizando,
             hayRed = offline.hayRed,
+            preparado = offline.preparado,
             avisoSync = offline.avisoSync,
             onSincronizar = { offlineVm.sincronizar(estado.lat, estado.lon) },
             onSalir = { offlineVm.salir() },
@@ -272,6 +273,11 @@ fun PantallaSenti(modifier: Modifier = Modifier) {
     }
 
     if (!estado.autenticado) {
+        // El estado de la red se relee al llegar aquí: si alguien activó el
+        // modo avión con la app abierta, el valor leído al arrancar ya no
+        // vale y de él depende el aviso que se muestra abajo.
+        LaunchedEffect(Unit) { offlineVm.refrescarRed() }
+
         PantallaAcceso(
             modifier = modifier,
             autenticando = estado.autenticando,
@@ -284,6 +290,7 @@ fun PantallaSenti(modifier: Modifier = Modifier) {
             // teléfono. Sin eso no hay nada que recuperar y el botón sería
             // una promesa vacía (§26).
             sesionGuardada = offline.sesion,
+            hayRed = offline.hayRed,
             onEntrarSinConexion = { offlineVm.entrar() },
         )
         return
@@ -1680,6 +1687,7 @@ private fun PantallaAcceso(
     onLogin: (String, String) -> Unit,
     onRegistro: (String, String, String?, String?) -> Unit,
     sesionGuardada: SesionLocal? = null,
+    hayRed: Boolean = true,
     onEntrarSinConexion: () -> Unit = {},
 ) {
     var modoRegistro by remember { mutableStateOf(false) }
@@ -1917,6 +1925,36 @@ private fun PantallaAcceso(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
                         )
+                    } else if (!hayRed) {
+                        // Sin red y sin sesión guardada no se puede entrar, y
+                        // callarlo deja a alguien reintentando un formulario
+                        // que no puede funcionar. El §11.3 aplicado a la
+                        // propia app: se declara la causa, no se deja adivinar.
+                        Spacer(Modifier.height(14.dp))
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(Radios.tarjeta),
+                        ) {
+                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
+                                Icon(
+                                    Icons.Filled.CloudOff,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    "No hay conexión y este teléfono todavía no ha " +
+                                        "iniciado sesión ninguna vez. El modo sin " +
+                                        "conexión necesita una sesión guardada, y solo " +
+                                        "se guarda al entrar con internet al menos una " +
+                                        "vez.\n\nMientras tanto: 115 Defensa Civil · " +
+                                        "116 Bomberos · 106 SAMU.",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                     }
                 }
             }
