@@ -170,10 +170,11 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
         email: String,
         password: String,
         displayName: String?,
+        telefono: String?,
         municipality: String?,
     ) = viewModelScope.launch {
         _estado.update { it.copy(autenticando = true, error = null) }
-        runCatching { Api.registro(email, password, displayName, municipality) }
+        runCatching { Api.registro(email, password, displayName, telefono, municipality) }
             .onSuccess { token ->
                 guardarSesion(email, token)
                 _estado.update { e ->

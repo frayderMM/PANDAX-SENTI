@@ -64,11 +64,12 @@ object Api {
         email: String,
         password: String,
         displayName: String? = null,
+        telefono: String? = null,
         municipality: String? = null,
     ): TokenResponse {
         val respuesta: TokenResponse = client.post("$baseUrl/auth/registro") {
             contentType(ContentType.Application.Json)
-            setBody(RegistroRequest(email, password, displayName, municipality))
+            setBody(RegistroRequest(email, password, displayName, telefono, municipality))
         }.body()
         token = respuesta.accessToken
         return respuesta
@@ -219,6 +220,16 @@ data class RegistroRequest(
     val email: String,
     val password: String,
     @SerialName("display_name") val displayName: String? = null,
+    /**
+     * §13.5: el backend lo guarda **seudonimizado**, nunca en claro.
+     *
+     * Viaja una sola vez, en el alta. El servidor calcula el seudónimo y
+     * descarta el número; ni la app lo conserva ni la base de datos lo tiene.
+     * Ese seudónimo es lo que permite que quien escribe por WhatsApp desde ese
+     * número tenga sus herramientas y su rol (§6) en vez de entrar como
+     * invitado.
+     */
+    val telefono: String? = null,
     val municipality: String? = null,
 )
 

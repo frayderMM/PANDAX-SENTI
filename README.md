@@ -400,6 +400,11 @@ de lo que es invita a bordearlo por donde no se puede.
 
 ## Modo sin conexión (§26)
 
+Se entra por el icono de mapa de la **cabecera**, presente en las tres
+pestañas. Está ahí y no dentro del perfil porque quien lo necesita está a punto
+de quedarse sin cobertura, o ya se quedó: esconder la salida de emergencia a
+dos toques y en una sección concreta es cobrar tiempo justo cuando no lo hay.
+
 Es una pantalla que **ocupa la app entera**. Mientras está puesta no hay chat,
 ni reportes, ni perfil, ni barra de navegación inferior. No están escondidos:
 no existen. Los tres necesitan servidor —el chat llama al modelo, los reportes
@@ -626,6 +631,19 @@ crea por seudónimo; el número en claro vive en memoria el tiempo de contestar.
 Si ese seudónimo coincide con el de una cuenta, quien escribe tiene sus
 herramientas y su rol (§6); si no, entra como invitado y recibe información
 general (§13.4). El rol sale de la cuenta, nunca del canal.
+
+Para que esa coincidencia ocurra, **el número se canoniza antes de calcular el
+seudónimo**. Los dos caminos lo traen escrito distinto: Evolution entrega
+`51987654321@s.whatsapp.net`, con código de país, y en el registro la gente
+teclea sus nueve dígitos. Dos textos distintos dan dos HMAC distintos, y el
+titular de una cuenta entraba por WhatsApp como invitado sin que nada fallara
+—recibía menos de lo que le corresponde, en silencio—. `canonizar_telefono`
+reduce a dígitos y antepone el 51 a los móviles peruanos; lo que ya trae código
+de país o no encaja en ese patrón se deja intacto, porque inventarle un prefijo
+a un número extranjero lo convertiría en otro número.
+
+El alta pide el celular por eso, y lo dice donde lo pide: es lo que enlaza la
+cuenta con el canal que sigue funcionando cuando la app no puede.
 
 El primer contacto recibe el aviso del §13.4 y **no se procesa nada más** hasta
 que responda `ACEPTO`. Se guarda cuándo aceptó y qué versión del aviso: demostrar

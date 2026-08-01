@@ -283,8 +283,8 @@ fun PantallaSenti(modifier: Modifier = Modifier) {
             autenticando = estado.autenticando,
             error = estado.error,
             onLogin = { email, pass -> vm.iniciarSesion(email, pass) },
-            onRegistro = { email, pass, nombre, distrito ->
-                vm.registrar(email, pass, nombre, distrito)
+            onRegistro = { email, pass, nombre, telefono, distrito ->
+                vm.registrar(email, pass, nombre, telefono, distrito)
             },
             // Solo se ofrece si hubo un login online de verdad en este
             // teléfono. Sin eso no hay nada que recuperar y el botón sería
@@ -369,6 +369,7 @@ private fun PantallaPrincipal(
                 estado,
                 onCrearReporte = vm::crearReporte,
                 onCargarReportes = vm::cargarReportes,
+                onModoSinConexion = onModoSinConexion,
             )
             SeccionPrincipal.PERFIL -> PantallaPerfil(
                 soloAbajo,
@@ -376,7 +377,7 @@ private fun PantallaPrincipal(
                 onModoSinConexion = onModoSinConexion,
                 onCerrarSesion = vm::cerrarSesion,
             )
-            SeccionPrincipal.CHAT -> PantallaChat(soloAbajo, vm, estado)
+            SeccionPrincipal.CHAT -> PantallaChat(soloAbajo, vm, estado, onModoSinConexion)
         }
     }
 
@@ -468,6 +469,16 @@ private fun RowScope.PestanaSenti(
 private fun EncabezadoSenti(
     titulo: String,
     subtitulo: String? = null,
+    /**
+     * Acceso al modo sin conexión, presente en TODAS las pantallas.
+     *
+     * Vive en la cabecera y no dentro de una sección por una razón concreta:
+     * quien lo necesita está a punto de quedarse sin cobertura, o ya se quedó,
+     * y entonces cada toque de más es tiempo. Estuvo dentro del perfil —dos
+     * toques y saber que había que buscarlo ahí— y eso es esconder la salida
+     * de emergencia en un cajón.
+     */
+    onModoSinConexion: (() -> Unit)? = null,
     accion: (@Composable () -> Unit)? = null,
 ) {
     Surface(
@@ -530,6 +541,15 @@ private fun EncabezadoSenti(
                     }
                 }
                 accion?.invoke()
+                onModoSinConexion?.let { abrir ->
+                    IconButton(onClick = abrir, modifier = Modifier.size(42.dp)) {
+                        Icon(
+                            Icons.Filled.Map,
+                            contentDescription = "Mapa sin conexión",
+                            tint = Color.White,
+                        )
+                    }
+                }
             }
         }
     }
@@ -588,6 +608,7 @@ private fun PantallaChat(
     modifier: Modifier = Modifier,
     vm: SentiViewModel,
     estado: com.example.senti.ui.SentiUiState,
+    onModoSinConexion: () -> Unit,
 ) {
     var entrada by remember { mutableStateOf("") }
     var imagenSeleccionada by remember { mutableStateOf<Uri?>(null) }
@@ -643,6 +664,7 @@ private fun PantallaChat(
         EncabezadoSenti(
             titulo = "SENTI",
             subtitulo = "Asistencia ante emergencias",
+            onModoSinConexion = onModoSinConexion,
             accion = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
@@ -985,6 +1007,7 @@ private fun PantallaReportes(
         fotoBase64: String?,
     ) -> Unit,
     onCargarReportes: (Double?, Double?) -> Unit,
+    onModoSinConexion: () -> Unit,
 ) {
     var creando by remember { mutableStateOf(false) }
 
@@ -1004,6 +1027,7 @@ private fun PantallaReportes(
             } else {
                 "Un reporte ciudadano no es información oficial hasta validarse."
             },
+            onModoSinConexion = onModoSinConexion,
         )
 
         Box(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
@@ -1537,6 +1561,7 @@ private fun PantallaPerfil(
         EncabezadoSenti(
             titulo = "Tu perfil",
             subtitulo = "Los datos mínimos para orientarte a ti y no a un promedio.",
+            onModoSinConexion = onModoSinConexion,
         )
         LazyColumn(
             Modifier.fillMaxSize().padding(horizontal = 14.dp),
@@ -1595,28 +1620,6 @@ private fun PantallaPerfil(
                             )
                         }
                     }
-                }
-            }
-            item {
-                // La puerta de entrada al modo sin conexión. Está aquí y no en
-                // la barra inferior porque no es una sección más: es cambiar la
-                // app entera de modo, y eso no se toca sin querer.
-                Button(
-                    onClick = onModoSinConexion,
-                    shape = RoundedCornerShape(28.dp),
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                ) {
-                    Icon(
-                        Icons.Filled.Map,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        "Abrir el mapa sin conexión",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
                 }
             }
             item {
@@ -1685,7 +1688,7 @@ private fun PantallaAcceso(
     autenticando: Boolean,
     error: String?,
     onLogin: (String, String) -> Unit,
-    onRegistro: (String, String, String?, String?) -> Unit,
+    onRegistro: (String, String, String?, String?, String?) -> Unit,
     sesionGuardada: SesionLocal? = null,
     hayRed: Boolean = true,
     onEntrarSinConexion: () -> Unit = {},
@@ -1694,8 +1697,18 @@ private fun PantallaAcceso(
     var email by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
     var nombre by remember { mutableStateOf("") }
+    var telefono by remember { mutableStateOf("") }
     var distrito by remember { mutableStateOf("") }
-    val puedeEnviar = email.isNotBlank() && pass.isNotBlank() && !autenticando
+
+    // El teléfono se exige en el alta y no en el login: es el dato que enlaza
+    // la cuenta con WhatsApp, que es el canal que sigue funcionando cuando la
+    // app no puede (§10.1). Nueve dígitos es el móvil peruano; se comprueba
+    // sobre los dígitos para que dé igual cómo lo escriba cada uno.
+    val digitosTelefono = telefono.filter { it.isDigit() }
+    val telefonoValido = digitosTelefono.length == 9 && digitosTelefono.startsWith("9")
+
+    val puedeEnviar = email.isNotBlank() && pass.isNotBlank() && !autenticando &&
+        (!modoRegistro || telefonoValido)
 
     Box(
         modifier
@@ -1826,6 +1839,37 @@ private fun PantallaAcceso(
                         )
                         Spacer(Modifier.height(12.dp))
                         OutlinedTextField(
+                            value = telefono,
+                            // Se filtra al escribir en vez de rechazar al
+                            // enviar: un campo que acepta letras y luego dice
+                            // que no valen hace escribir dos veces.
+                            onValueChange = { nuevo ->
+                                telefono = nuevo.filter { it.isDigit() || it == ' ' }.take(12)
+                            },
+                            label = { Text("Celular") },
+                            placeholder = { Text("9XX XXX XXX") },
+                            singleLine = true,
+                            isError = telefono.isNotBlank() && !telefonoValido,
+                            supportingText = {
+                                Text(
+                                    if (telefono.isNotBlank() && !telefonoValido) {
+                                        "Nueve dígitos y empieza por 9."
+                                    } else {
+                                        // §13.5, dicho donde se pide el dato y
+                                        // no en un enlace legal que nadie abre.
+                                        "Se guarda cifrado, nunca en claro. Sirve para " +
+                                            "atenderte por WhatsApp si la app no puede."
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            },
+                            shape = RoundedCornerShape(28.dp),
+                            colors = coloresCampoPildora(),
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
                             value = distrito,
                             onValueChange = { distrito = it },
                             label = { Text("Distrito (opcional)") },
@@ -1853,6 +1897,12 @@ private fun PantallaAcceso(
                                 onRegistro(
                                     email.trim(), pass,
                                     nombre.trim().ifBlank { null },
+                                    // Van solo los dígitos. El backend los
+                                    // canoniza igualmente —les antepone el 51
+                                    // para que coincidan con el número que
+                                    // entrega WhatsApp—, así que esto es por
+                                    // no mandarle espacios que va a tirar.
+                                    digitosTelefono,
                                     distrito.trim().ifBlank { null },
                                 )
                             } else {
