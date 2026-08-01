@@ -272,7 +272,17 @@ def _nombre_recurso(texto: str) -> str | None:
     if not m:
         return None
     candidato = re.split(r"\b(?:mas|más)\s+cercan[oa]s?\b|\bcercan[oa]s?\b|\ben mi zona\b", m.group(1))[0].strip()
-    if candidato in {"publico", "publica", "privado", "privada", "nacional"}:
+    if candidato in {
+        "cualquiera",
+        "cerca",
+        "cercano",
+        "cercana",
+        "publico",
+        "publica",
+        "privado",
+        "privada",
+        "nacional",
+    }:
         return None
     return candidato.strip(" .,-") or None
 
