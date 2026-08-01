@@ -6,6 +6,7 @@
 #   llm-cuda   lo mismo con GPU, si algún día la hay
 #   geo        Valhalla (rutas). El mapa lo dibuja Google en el cliente.
 #   obs        Prometheus, Grafana
+#   whatsapp   Evolution API propia (§10.1), definida en whatsapp-api/
 #
 # El modelo se consume SIEMPRE por el contrato OpenAI en SENTI_LLM_BASE_URL.
 # Con LM Studio en el host apuntas a host.docker.internal:1234/v1 y no
@@ -38,6 +39,13 @@ x-llm-env: &llm-env
   SENTI_CITIZEN_LLM_BASE_URL: ${SENTI_CITIZEN_LLM_BASE_URL:-http://llama-citizen:1236/v1}
   SENTI_CITIZEN_LLM_MODEL: ${SENTI_CITIZEN_LLM_MODEL:-google/gemma-2-2b-it}
   SENTI_CITIZEN_SOURCE_POLL_MINUTES: ${SENTI_CITIZEN_SOURCE_POLL_MINUTES:-10}
+
+# El transporte de WhatsApp vive en su propia carpeta pero se incluye aquí, y
+# no se levanta como proyecto aparte, para que Evolution y el backend queden en
+# la misma red: se hablan en las dos direcciones y con proyectos separados el
+# tráfico del canal de emergencia tendría que salir al host y volver a entrar.
+include:
+  - whatsapp-api/docker-compose.yml
 
 x-backend: &backend
   build:

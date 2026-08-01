@@ -1,0 +1,145 @@
+# Evolution API propia (§10.1).
+#
+# Este archivo lo incluye el `docker-compose.yml` de la raíz, así que Evolution
+# queda en la MISMA red que el backend. Es la razón de que no sea un proyecto
+# de Compose aparte: los dos se hablan en las dos direcciones —el backend envía
+# por `http://evolution:8080` y Evolution avisa por `http://api:8000`— y desde
+# proyectos separados eso obligaría a publicar puertos y a que el tráfico de un
+# canal de emergencia saliera al host para volver a entrar.
+#
+# Todo va bajo el perfil `whatsapp`: sin `--profile whatsapp` estos servicios
+# no arrancan y el resto de SENTI funciona igual que hasta ahora.
+
+services:
+
+  # Evolution guarda su estado en Postgres, pero no en la base de SENTI: una
+  # migración suya no puede tocar las tablas del §27. Se crea una base aparte
+  # en el mismo servidor —más barato que levantar otro Postgres en una máquina
+  # que ya sostiene tres modelos— y este paso la crea solo si falta.
+  #
+  # No sirve el `init` de `infra/postgres`: esos scripts corren una única vez,
+  # cuando el volumen se crea. En el servidor ese volumen existe desde hace
+  # meses, así que un script nuevo ahí no se ejecutaría nunca.
+  evolution-db-init:
+    profiles: ["whatsapp"]
+    image: postgres:17-alpine
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-senti}
+      PGUSER: ${POSTGRES_USER:-senti}
+      PGDATABASE: ${POSTGRES_DB:-senti}
+      EVOLUTION_DB: ${EVOLUTION_DB_NAME:-evolution}
+      SENTI_EVOLUTION_API_KEY: ${SENTI_EVOLUTION_API_KEY:-}
+    entrypoint: ["sh", "-c"]
+    # El script va como UN elemento de lista con `|`, no como cadena suelta.
+    #
+    # No es cosmético: con `command:` en forma de cadena, Compose la parte por
+    # espacios y se la entrega a `sh -c` como argumentos sueltos. El primero
+    # pasa a ser el script y el resto, parámetros posicionales — de modo que
+    # `set -e; if …` ejecuta `set` a secas, que **imprime todo el entorno**,
+    # llave de API incluida, en el log del contenedor. Ocurrió.
+    #
+    # Aquí se comprueba además que hay llave, y no con un `${VAR:?}` en el
+    # servicio de Evolution: Compose interpola el archivo entero aunque el
+    # perfil esté apagado, así que un `:?` rompería `docker compose config`
+    # para todos —incluida la validación obligatoria del despliegue— solo por
+    # tener declarado un canal que quizá no se usa. Como Evolution depende de
+    # que este paso termine bien, fallar aquí lo deja sin arrancar, que es lo
+    # que se busca: sin llave queda abierto a quien alcance el puerto.
+    command:
+      - |
+        set -eu
+        if [ -z "${SENTI_EVOLUTION_API_KEY:-}" ]; then
+          echo "FALTA SENTI_EVOLUTION_API_KEY en .env. Genérala con: openssl rand -hex 32" >&2
+          exit 1
+        fi
+        existe=$$(psql -h db -U "$$PGUSER" -d "$$PGDATABASE" -tAc \
+          "SELECT 1 FROM pg_database WHERE datname='$$EVOLUTION_DB'")
+        if [ "$$existe" != "1" ]; then
+          psql -h db -U "$$PGUSER" -d "$$PGDATABASE" -c "CREATE DATABASE \"$$EVOLUTION_DB\""
+          echo "base $$EVOLUTION_DB creada"
+        else
+          echo "base $$EVOLUTION_DB ya existía"
+        fi
+    restart: "no"
+
+  evolution:
+    profiles: ["whatsapp"]
+    # Versión fijada y estable, no `latest`.
+    #
+    # La imagen es `evoapicloud`, no `atendai`: esa última se quedó en febrero
+    # de 2025 y el proyecto se movió. Y no se usa la 2.4.0-rc porque una
+    # release candidate en el canal por el que la gente pide ayuda es apostar
+    # con algo que no es nuestro.
+    image: evoapicloud/evolution-api:v2.3.7
+    depends_on:
+      evolution-db-init:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_started
+    environment:
+      SERVER_URL: ${SENTI_EVOLUTION_SERVER_URL:-http://localhost:8081}
+
+      # La llave del panel y de la API. Que esté presente lo comprueba el paso
+      # anterior, que aborta si falta y deja este servicio sin arrancar.
+      AUTHENTICATION_API_KEY: ${SENTI_EVOLUTION_API_KEY:-}
+
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://${POSTGRES_USER:-senti}:${POSTGRES_PASSWORD:-senti}@db:5432/${EVOLUTION_DB_NAME:-evolution}?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: senti_evolution
+
+      # ── Lo que Evolution NO guarda, y por qué ──────────────────────
+      #
+      # Por defecto archiva cada mensaje, cada contacto y cada chat en claro.
+      # Eso contradice el §13.5 de raíz: SENTI seudonimiza el teléfono y el
+      # número en claro solo vive en memoria el tiempo de contestar. De nada
+      # sirve esa disciplina si el transporte guarda debajo una copia completa
+      # de la conversación con el número al lado.
+      #
+      # Se conserva únicamente la instancia, que es la sesión emparejada con
+      # el teléfono: sin ella habría que volver a escanear el QR en cada
+      # reinicio, y un canal de emergencia que se cae al reiniciar no sirve.
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "false"
+      DATABASE_SAVE_MESSAGE_UPDATE: "false"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
+      DATABASE_SAVE_DATA_LABELS: "false"
+      DATABASE_SAVE_DATA_HISTORIC: "false"
+
+      # Comparte el Valkey de SENTI en otra base y con prefijo propio: son
+      # cachés que no se mezclan y se distinguen de un vistazo con `KEYS`.
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://valkey:6379/6
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CACHE_REDIS_SAVE_INSTANCES: "false"
+      CACHE_LOCAL_ENABLED: "false"
+
+      # El webhook se configura POR INSTANCIA y no aquí. El global de Evolution
+      # no admite cabeceras propias, y SENTI exige `X-Senti-Token`: sin ese
+      # secreto compartido, quien descubra la URL hace que SENTI escriba a
+      # quien él diga. La instancia se crea con la cabecera puesta; el README
+      # de esta carpeta trae el comando.
+      WEBHOOK_GLOBAL_ENABLED: "false"
+
+      # El QR caduca; reintentarlo indefinidamente deja una instancia zombi
+      # pidiendo emparejarse. Con un número acotado falla y se ve que falló.
+      QRCODE_LIMIT: "10"
+      LOG_LEVEL: ${SENTI_EVOLUTION_LOG_LEVEL:-ERROR,WARN}
+      LOG_BAILEYS: "error"
+      TELEMETRY_ENABLED: "false"
+
+    volumes:
+      - evolution-instances:/evolution/instances
+
+    # Solo en el bucle local. Evolution expone el emparejamiento del número y
+    # el envío de mensajes: publicarlo es entregar el WhatsApp de la
+    # institución. Para ver el panel se hace un túnel SSH; está en el README.
+    ports: ["127.0.0.1:${SENTI_EVOLUTION_HOST_PORT:-8081}:8080"]
+    restart: unless-stopped
+
+volumes:
+  evolution-instances:

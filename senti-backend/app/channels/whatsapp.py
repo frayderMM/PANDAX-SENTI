@@ -16,7 +16,7 @@ import logging
 import httpx
 
 from app.core.config import settings
-from app.core.crypto import canonizar_telefono
+from app.rules.phones import canonizar_telefono
 
 logger = logging.getLogger(__name__)
 
@@ -47,14 +47,13 @@ def normalizar_numero(numero: str) -> str:
     Solo se limpia lo que llega como número suelto, que es lo que escribe un
     humano al configurar algo: `+51 987-654-321` → `51987654321`.
 
-    La canonización (dígitos + `51` delante de un celular peruano de 9
-    dígitos) es la misma que usa `core.crypto.canonizar_telefono` para el
-    seudónimo de identidad: es el mismo problema —"925650163" y
-    "51925650163@s.whatsapp.net" tienen que resolver a la misma persona y al
-    mismo destinatario— resuelto una sola vez, no dos veces por separado. Sin
-    esto, `AlertSubscriber.telefono` ("925650163", tal como se registra)
-    llega a Evolution como 9 dígitos que no resuelven a ningún JID: el envío
-    no lanza error, Evolution solo no encuentra al destinatario.
+    **Y se le añade el código de país si le falta.** Evolution no enruta nueve
+    dígitos sueltos: responde `exists: false` y el mensaje no sale, sin error
+    por nuestra parte. Importa porque los números que la app captura en el alta
+    son justo esos nueve dígitos, y a ellos se dirigen las alertas por
+    distrito: sin esto fallarían todas y en silencio. Se usa la misma
+    canonización que el seudónimo del §13.5, para que el número al que se
+    escribe y el que identifica a la persona no puedan divergir.
     """
     if "@" in numero:
         jid = numero.strip()

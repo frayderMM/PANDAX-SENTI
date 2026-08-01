@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -50,10 +51,12 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.text.BasicTextField
 import com.example.senti.ui.theme.Radios
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Backpack
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.automirrored.filled.AltRoute
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Water
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -64,6 +67,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Report
@@ -102,6 +106,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.heightIn
@@ -138,6 +145,7 @@ import com.example.senti.ui.Mensaje
 import com.example.senti.R
 import com.example.senti.data.MarcadorMapa
 import com.example.senti.data.SesionLocal
+import com.example.senti.data.TemaApp
 import com.example.senti.data.TipoDesastre
 import com.example.senti.data.aMarcador
 import com.example.senti.data.formatearFechaHora
@@ -164,12 +172,22 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            SENTITheme {
+            // El ViewModel se crea aquí y no dentro de PantallaSenti: el tema
+            // envuelve toda la pantalla, así que necesita el estado —para
+            // saber qué eligió la persona— antes de que exista nada dentro.
+            val vm: SentiViewModel = viewModel()
+            val estado by vm.estado.collectAsStateWithLifecycle()
+            val temaOscuro = when (estado.tema) {
+                TemaApp.CLARO -> false
+                TemaApp.OSCURO -> true
+                TemaApp.SISTEMA -> isSystemInDarkTheme()
+            }
+            SENTITheme(darkTheme = temaOscuro) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    PantallaSenti()
+                    PantallaSenti(vm = vm, estado = estado)
                 }
             }
         }
@@ -259,10 +277,12 @@ private fun decodificarImagen(context: Context, uri: Uri, maxDimension: Int): Bi
 }
 
 @Composable
-fun PantallaSenti(modifier: Modifier = Modifier) {
-    val vm: SentiViewModel = viewModel()
+fun PantallaSenti(
+    vm: SentiViewModel,
+    estado: com.example.senti.ui.SentiUiState,
+    modifier: Modifier = Modifier,
+) {
     val offlineVm: ModoOfflineViewModel = viewModel()
-    val estado by vm.estado.collectAsStateWithLifecycle()
     val offline by offlineVm.estado.collectAsStateWithLifecycle()
 
     // El modo sin conexión ocupa la app ENTERA y sale antes que cualquier otra
@@ -394,6 +414,7 @@ private fun PantallaPrincipal(
                 estado,
                 onModoSinConexion = onModoSinConexion,
                 onCerrarSesion = vm::cerrarSesion,
+                onFijarTema = vm::fijarTema,
             )
             SeccionPrincipal.CHAT -> PantallaChat(soloAbajo, vm, estado, onModoSinConexion)
         }
@@ -497,6 +518,11 @@ private fun EncabezadoSenti(
      * de emergencia en un cajón.
      */
     onModoSinConexion: (() -> Unit)? = null,
+    // Cuando no es null, cambia el icono de marca por una flecha de volver.
+    // Las pantallas que cuelgan de "Tu perfil" no son un destino propio de la
+    // barra inferior; necesitan cómo volver sin depender solo del gesto de
+    // Android.
+    onVolver: (() -> Unit)? = null,
     accion: (@Composable () -> Unit)? = null,
 ) {
     Surface(
@@ -525,20 +551,31 @@ private fun EncabezadoSenti(
                     .padding(start = 18.dp, end = 14.dp, top = 14.dp, bottom = 18.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Surface(
-                    color = Color.White.copy(alpha = 0.16f),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.size(42.dp),
-                ) {
-                    // El icono propio de SENTI, no un triángulo de peligro.
-                    // Ese triángulo es el símbolo con el que la app marca un
-                    // peligro real (§18); gastarlo en la cabecera de todas las
-                    // pantallas lo vacía de significado justo donde hace falta.
-                    Image(
-                        painter = painterResource(R.mipmap.ic_launcher_foreground),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                if (onVolver != null) {
+                    IconButton(onClick = onVolver, modifier = Modifier.size(42.dp)) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Volver",
+                            tint = Color.White,
+                        )
+                    }
+                } else {
+                    Surface(
+                        color = Color.White.copy(alpha = 0.16f),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.size(42.dp),
+                    ) {
+                        // El icono propio de SENTI, no un triángulo de
+                        // peligro. Ese triángulo es el símbolo con el que la
+                        // app marca un peligro real (§18); gastarlo en la
+                        // cabecera de todas las pantallas lo vacía de
+                        // significado justo donde hace falta.
+                        Image(
+                            painter = painterResource(R.mipmap.ic_launcher_foreground),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
                 Spacer(Modifier.width(13.dp))
                 Column(Modifier.weight(1f)) {
@@ -1851,7 +1888,18 @@ private fun PantallaPerfil(
     estado: com.example.senti.ui.SentiUiState,
     onModoSinConexion: () -> Unit,
     onCerrarSesion: () -> Unit,
+    onFijarTema: (TemaApp) -> Unit,
 ) {
+    // Las preguntas frecuentes cuelgan de aquí y no de la barra inferior: se
+    // leen una vez, no son un destino al que se vuelve.
+    var enFaq by remember { mutableStateOf(false) }
+
+    if (enFaq) {
+        BackHandler { enFaq = false }
+        PantallaFAQ(modifier, onVolver = { enFaq = false })
+        return
+    }
+
     Column(modifier.fillMaxSize()) {
         EncabezadoSenti(
             titulo = "Tu perfil",
@@ -1917,6 +1965,48 @@ private fun PantallaPerfil(
                     }
                 }
             }
+            item { FilaTema(estado.tema, onFijarTema) }
+            item {
+                Surface(
+                    onClick = { enFaq = true },
+                    shape = RoundedCornerShape(Radios.tarjeta),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(Modifier.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.HelpOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(9.dp).size(20.dp),
+                            )
+                        }
+                        Spacer(Modifier.width(13.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Preguntas frecuentes", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "Cómo funciona SENTI y qué límites tiene.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            }
             item {
                 OutlinedButton(
                     onClick = onCerrarSesion,
@@ -1927,6 +2017,153 @@ private fun PantallaPerfil(
                 }
             }
             estado.error?.let { item { AvisoError(it) } }
+        }
+    }
+}
+
+/**
+ * Selector de tema. Vive en el dispositivo, no en la cuenta (§ninguno: es una
+ * preferencia de accesibilidad y comodidad, no un dato personal), por eso se
+ * guarda en `PreferenciasStore` y sobrevive a cerrar sesión.
+ */
+@Composable
+private fun FilaTema(tema: TemaApp, onCambiar: (TemaApp) -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(Radios.tarjeta),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(15.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.Palette,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(9.dp).size(20.dp),
+                    )
+                }
+                Spacer(Modifier.width(13.dp))
+                Text("Tema", style = MaterialTheme.typography.titleMedium)
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OpcionTema("Sistema", tema == TemaApp.SISTEMA, Modifier.weight(1f)) { onCambiar(TemaApp.SISTEMA) }
+                OpcionTema("Claro", tema == TemaApp.CLARO, Modifier.weight(1f)) { onCambiar(TemaApp.CLARO) }
+                OpcionTema("Oscuro", tema == TemaApp.OSCURO, Modifier.weight(1f)) { onCambiar(TemaApp.OSCURO) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OpcionTema(texto: String, seleccionado: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    if (seleccionado) {
+        Button(onClick = onClick, shape = RoundedCornerShape(Radios.chip), modifier = modifier) {
+            Text(texto, style = MaterialTheme.typography.labelMedium)
+        }
+    } else {
+        OutlinedButton(onClick = onClick, shape = RoundedCornerShape(Radios.chip), modifier = modifier) {
+            Text(texto, style = MaterialTheme.typography.labelMedium)
+        }
+    }
+}
+
+private data class PreguntaFrecuente(val pregunta: String, val respuesta: String)
+
+/**
+ * Contenido fijo y no del modelo: son respuestas sobre cómo funciona la app,
+ * no orientación ante una emergencia, así que no hace falta el backend. Cada
+ * una describe un comportamiento que ya existe en la app, no una promesa
+ * nueva — igual que el resto de textos fijos de SENTI.
+ */
+private val PREGUNTAS_FRECUENTES = listOf(
+    PreguntaFrecuente(
+        "¿SENTI reemplaza a Defensa Civil, Bomberos o la Policía?",
+        "No, nunca. SENTI orienta; el canal oficial del Estado es quien confirma y " +
+            "actúa. En una emergencia real, llama primero: 115 Defensa Civil, " +
+            "116 Bomberos, 105 Policía, 106 SAMU.",
+    ),
+    PreguntaFrecuente(
+        "¿Qué significa que un reporte esté \"Probable\" o \"Confirmado\"?",
+        "Es el nivel de confianza, no una opinión. \"Confirmado por el municipio\" " +
+            "viene de una fuente oficial. \"Validado\" y \"Probable\" son reportes " +
+            "ciudadanos sin esa confirmación — se muestran igual, pero con esa " +
+            "diferencia siempre visible en el color y en el texto.",
+    ),
+    PreguntaFrecuente(
+        "¿Qué pasa si no tengo señal?",
+        "La app guarda un paquete básico —teléfonos de emergencia, la última " +
+            "alerta descargada y tu plan familiar— desde la última vez que hubo " +
+            "conexión, y siempre muestra la fecha de esa descarga. Nunca presenta " +
+            "esa información vieja como si fuera de ahora.",
+    ),
+    PreguntaFrecuente(
+        "¿Alguien más puede ver mis reportes o quién los hizo?",
+        "Los reportes ciudadanos se muestran sin el nombre de quien los hizo, y " +
+            "los datos de tu perfil del hogar no se comparten con otros usuarios.",
+    ),
+    PreguntaFrecuente(
+        "¿Las fotos que envío por el chat se guardan?",
+        "No se guardan en ningún servidor: se usan solo para analizar ese mensaje.",
+    ),
+    PreguntaFrecuente(
+        "¿Puedo negarme a compartir algún dato?",
+        "Sí. Cada dato se pide por separado y negarte no bloquea el servicio " +
+            "básico: protocolos, teléfonos e información oficial siguen " +
+            "disponibles. Revisa qué autorizaste en \"Términos y condiciones\".",
+    ),
+)
+
+@Composable
+private fun PantallaFAQ(modifier: Modifier = Modifier, onVolver: () -> Unit) {
+    Column(modifier.fillMaxSize()) {
+        EncabezadoSenti(
+            titulo = "Preguntas frecuentes",
+            subtitulo = "Cómo funciona SENTI y qué límites tiene.",
+            onVolver = onVolver,
+        )
+        LazyColumn(
+            Modifier.fillMaxSize().padding(horizontal = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(vertical = 14.dp),
+        ) {
+            items(PREGUNTAS_FRECUENTES) { PreguntaFrecuenteFila(it) }
+        }
+    }
+}
+
+@Composable
+private fun PreguntaFrecuenteFila(pf: PreguntaFrecuente) {
+    var abierta by remember { mutableStateOf(false) }
+    Surface(
+        onClick = { abierta = !abierta },
+        shape = RoundedCornerShape(Radios.tarjeta),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(15.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(pf.pregunta, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Icon(
+                    if (abierta) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            if (abierta) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    pf.respuesta,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -1991,6 +2228,7 @@ private fun PantallaAcceso(
     var modoRegistro by remember { mutableStateOf(false) }
     var email by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
+    var passVisible by remember { mutableStateOf(false) }
     var nombre by remember { mutableStateOf("") }
     var distrito by remember { mutableStateOf("") }
     var telefono by remember { mutableStateOf("") }
@@ -2120,7 +2358,28 @@ private fun PantallaAcceso(
                         singleLine = true,
                         shape = RoundedCornerShape(28.dp),
                         colors = coloresCampoPildora(),
-                        visualTransformation = PasswordVisualTransformation(),
+                        visualTransformation = if (passVisible) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
+                        },
+                        // Sin esto, tipear una contraseña larga a ciegas en un
+                        // formulario con dos campos (correo y contraseña, y
+                        // hasta cuatro en el registro) es la situación exacta
+                        // en la que un error tipográfico pasa desapercibido
+                        // hasta que el envío falla.
+                        trailingIcon = {
+                            IconButton(onClick = { passVisible = !passVisible }) {
+                                Icon(
+                                    if (passVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                    contentDescription = if (passVisible) {
+                                        "Ocultar contraseña"
+                                    } else {
+                                        "Mostrar contraseña"
+                                    },
+                                )
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     )
