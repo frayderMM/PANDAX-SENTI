@@ -114,6 +114,15 @@ p { text-wrap: pretty; }
   transition: transform 180ms ease;
 }
 .topbar nav a:hover::after { transform: scaleX(1); }
+.acciones-cabecera { display: flex; align-items: center; gap: 12px; }
+.enlace-login {
+  color: var(--tinta-suave);
+  font-size: 12px;
+  font-weight: 750;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.enlace-login:hover { color: var(--verde); }
 .boton-cabecera {
   padding: 10px 16px;
   border-radius: 9px;
@@ -412,6 +421,7 @@ footer .creditos { position: absolute; right: 5vw; bottom: 24px; margin: 0; colo
 @media (max-width: 720px) {
   .topbar { display: flex; padding: 12px 20px; }
   .topbar nav { display: none; }
+  .acciones-cabecera { margin-left: auto; }
   main { padding: 0 20px 62px; }
   .hero { gap: 42px; padding: 54px 0 48px; }
   .hero h1 { max-width: 100%; font-size: clamp(40px, 12vw, 52px); overflow-wrap: anywhere; }

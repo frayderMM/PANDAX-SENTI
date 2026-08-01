@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.senti.data.AlmacenZona
+import com.example.senti.data.Api
 import com.example.senti.data.EstiloOffline
 import com.example.senti.data.Guias
 import com.example.senti.data.LecturaZona
@@ -22,6 +23,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+// Centro del distrito piloto. Permite descargar el primer paquete aunque el
+// permiso de ubicación todavía no haya sido concedido; la persona puede
+// actualizarlo después desde "Centrar ubicación".
+private const val ZONA_PILOTO_LAT = -11.9404
+private const val ZONA_PILOTO_LON = -76.7006
 
 data class EstadoOffline(
     /** Si está puesto, la app entera es el mapa sin conexión y nada más. */
@@ -110,6 +117,10 @@ class ModoOfflineViewModel(app: Application) : AndroidViewModel(app) {
     fun haySesionGuardada(): Boolean = _estado.value.sesion != null
 
     fun entrar() {
+        // El acceso offline se ofrece desde una sesión guardada. Reinstalar su
+        // token aquí permite que "Actualizar datos" funcione aunque la app
+        // haya arrancado directamente en este modo.
+        _estado.value.sesion?.let { Api.token = it.token }
         _estado.update { it.copy(activo = true, hayRed = Red.hay(getApplication())) }
     }
 
@@ -132,20 +143,17 @@ class ModoOfflineViewModel(app: Application) : AndroidViewModel(app) {
      * ya estaba cargado sigue en pantalla y el del disco sigue en el disco.
      */
     fun sincronizar(lat: Double?, lon: Double?, rutas: List<RutaGuardada> = emptyList()) {
-        if (lat == null || lon == null) {
-            _estado.update {
-                it.copy(
-                    avisoSync = "Hace falta tu ubicación para saber qué zona descargar.",
-                )
-            }
-            return
-        }
+        // La primera descarga no debe quedar bloqueada por el permiso GPS.
+        // Si todavía no hay posición, se usa el centro del piloto y se deja
+        // claro que el usuario puede volver a centrar y descargar su zona.
+        val zonaLat = lat ?: ZONA_PILOTO_LAT
+        val zonaLon = lon ?: ZONA_PILOTO_LON
         if (_estado.value.sincronizando) return
 
         viewModelScope.launch {
             _estado.update { it.copy(sincronizando = true, avisoSync = null) }
             val resultado = withContext(Dispatchers.IO) {
-                sincronizador.sincronizar(lat, lon, rutas)
+                sincronizador.sincronizar(zonaLat, zonaLon, rutas)
             }
             _estado.update { e ->
                 when (resultado) {

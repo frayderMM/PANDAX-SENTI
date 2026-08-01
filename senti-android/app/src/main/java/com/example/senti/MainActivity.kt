@@ -42,7 +42,6 @@ import androidx.compose.material.icons.outlined.Report
 import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.Add
@@ -222,7 +221,7 @@ private val COLOR_SIN_CONEXION = Color(0xFF49454F)
  * los usan ahora van dentro de un `LazyColumn`: con letra grande o en tableta
  * el resto del contenido se desplaza en vez de recortarse.
  */
-private val ALTURA_MAPA_RESUMEN = 240.dp
+private val ALTURA_MAPA_RESUMEN = 420.dp
 private val ALTURA_MAPA_SELECCION = 260.dp
 
 private fun colorUrgencia(urgencia: String?): Color = when (urgencia) {
@@ -412,7 +411,6 @@ private fun PantallaPrincipal(
             SeccionPrincipal.PERFIL -> PantallaPerfil(
                 soloAbajo,
                 estado,
-                onModoSinConexion = onModoSinConexion,
                 onCerrarSesion = vm::cerrarSesion,
                 onFijarTema = vm::fijarTema,
             )
@@ -1485,8 +1483,6 @@ private fun ListaReportes(
     onRecargar: () -> Unit,
     encabezado: @Composable () -> Unit,
 ) {
-    var reporteSeleccionado by remember { mutableStateOf<com.example.senti.data.ReporteResumen?>(null) }
-
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(top = 14.dp, bottom = 96.dp),
@@ -1521,7 +1517,6 @@ private fun ListaReportes(
                 }
             }
             else -> {
-                items(estado.reportes) { r -> TarjetaReporte(r) { reporteSeleccionado = r } }
                 item {
                     Column {
                         OutlinedButton(onClick = onRecargar, modifier = Modifier.fillMaxWidth()) {
@@ -1539,145 +1534,6 @@ private fun ListaReportes(
         }
     }
 
-    reporteSeleccionado?.let { reporte ->
-        AlertDialog(
-            onDismissRequest = { reporteSeleccionado = null },
-            title = { Text(TipoDesastre.etiquetaDe(reporte.tipo)) },
-            // El detalle es un superconjunto de lo que ya se ve en la
-            // tarjeta —distrito y fecha incluidos— y no un subconjunto: antes
-            // se perdían al abrir "más información", que es justo al revés
-            // de lo que alguien espera al pedir más detalle.
-            text = {
-                Column {
-                    Text(etiquetaConfianza(reporte.confianza), color = colorConfianza(reporte.confianza))
-                    Spacer(Modifier.height(8.dp))
-                    Text(reporte.descripcion?.takeIf { it.isNotBlank() } ?: "Sin descripción adicional.")
-                    val ubicacion = listOfNotNull(
-                        reporte.direccion?.takeIf { it.isNotBlank() },
-                        reporte.distrito?.takeIf { it.isNotBlank() },
-                    ).joinToString(" · ")
-                    if (ubicacion.isNotBlank()) {
-                        Spacer(Modifier.height(8.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.Place, contentDescription = "Ubicación", modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(ubicacion)
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Reportado: ${reporte.reportadoAt.take(16).replace('T', ' ')}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            },
-            confirmButton = { TextButton(onClick = { reporteSeleccionado = null }) { Text("Cerrar") } },
-        )
-    }
-}
-
-@Composable
-private fun TarjetaReporte(
-    r: com.example.senti.data.ReporteResumen,
-    onClick: () -> Unit,
-) {
-    val color = colorConfianza(r.confianza)
-    Surface(
-        shape = RoundedCornerShape(Radios.tarjeta),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(Modifier.height(IntrinsicSize.Min)) {
-            // Filo de color a la izquierda en vez de una franja a todo lo ancho.
-            //
-            // La franja anterior ocupaba el borde superior entero y con varios
-            // reportes en pantalla la lista era una sucesión de barras de
-            // colores donde ya no se leía ninguna. El §12 pide que el nivel de
-            // confianza se distinga, no que domine: el filo se ve de un vistazo
-            // recorriendo la lista y deja el peso visual al contenido.
-            Box(
-                Modifier
-                    .width(5.dp)
-                    .fillMaxHeight()
-                    .background(color)
-            )
-            Column(Modifier.padding(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        TipoDesastre.etiquetaDe(r.tipo),
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (r.mio) {
-                        Surface(
-                            shape = RoundedCornerShape(50),
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                        ) {
-                            Text(
-                                "TUYO",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                            )
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(7.dp))
-                // El nivel va en texto y en color, nunca solo en color (§12,
-                // §31.2): quien no distingue el rojo del ámbar tiene que poder
-                // leerlo igual.
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(7.dp).clip(CircleShape).background(color))
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        etiquetaConfianza(r.confianza),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = color,
-                    )
-                }
-
-                r.descripcion?.takeIf { it.isNotBlank() }?.let {
-                    Spacer(Modifier.height(9.dp))
-                    Text(it, style = MaterialTheme.typography.bodyMedium)
-                }
-                // El distrito faltaba en la tarjeta aunque el dato ya viaja en
-                // `ReporteResumen`. Con reportes cargados por radio y no por
-                // distrito, verlo de un vistazo en cada tarjeta evita tener
-                // que abrir el mapa para saber dónde cae cada uno.
-                val ubicacion = listOfNotNull(
-                    r.direccion?.takeIf { it.isNotBlank() },
-                    r.distrito?.takeIf { it.isNotBlank() },
-                ).joinToString(" · ")
-                if (ubicacion.isNotBlank()) {
-                    Spacer(Modifier.height(7.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Filled.Place,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(14.dp),
-                        )
-                        Spacer(Modifier.width(5.dp))
-                        Text(
-                            ubicacion,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                Spacer(Modifier.height(7.dp))
-                Text(
-                    r.reportadoAt.take(16).replace('T', ' '),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
 }
 
 @Composable
@@ -1886,7 +1742,6 @@ private fun TipoReporteChip(
 private fun PantallaPerfil(
     modifier: Modifier = Modifier,
     estado: com.example.senti.ui.SentiUiState,
-    onModoSinConexion: () -> Unit,
     onCerrarSesion: () -> Unit,
     onFijarTema: (TemaApp) -> Unit,
 ) {
@@ -1904,7 +1759,6 @@ private fun PantallaPerfil(
         EncabezadoSenti(
             titulo = "Tu perfil",
             subtitulo = "Los datos mínimos para orientarte a ti y no a un promedio.",
-            onModoSinConexion = onModoSinConexion,
         )
         LazyColumn(
             Modifier.fillMaxSize().padding(horizontal = 14.dp),
@@ -2518,6 +2372,17 @@ private fun PantallaAcceso(
                         )
                     }
 
+                    if (!modoRegistro) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Al entrar con internet, SENTI descargará automáticamente " +
+                                "el mapa y los datos básicos para usarlos sin conexión.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+
                     // §26: si ya hubo un login en este teléfono, se puede
                     // entrar sin red. No se comprueba nada contra el servidor
                     // —no habría con qué— y por eso solo lleva al mapa
@@ -2538,7 +2403,7 @@ private fun PantallaAcceso(
                             )
                             Spacer(Modifier.width(10.dp))
                             Text(
-                                "Entrar sin conexión",
+                                "Usar mapa sin internet",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
                             )

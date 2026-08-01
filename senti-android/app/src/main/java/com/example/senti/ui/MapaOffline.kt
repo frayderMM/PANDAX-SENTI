@@ -113,10 +113,11 @@ fun LienzoMapaOffline(
                     m.setStyle(Style.Builder().fromJson(json)) {
                         prepararCapas(it)
                         pintar(it, paquete, miUbicacion)
-                        // Sin paquete no se sabe dónde está el usuario todavía;
-                        // se encuadra el pack para que no aparezca el océano.
+                        // Sin paquete ni GPS se encuadra el distrito piloto para
+                        // que la primera pantalla no aparezca sobre el océano.
                         val centro = miUbicacion
                             ?: paquete?.let { p -> Punto(p.centroLat, p.centroLon) }
+                            ?: Punto(-11.9404, -76.7006)
                         centro?.let { c ->
                             m.animateCamera(
                                 CameraUpdateFactory.newLatLngZoom(LatLng(c.lat, c.lon), 15.0)
@@ -273,4 +274,3 @@ private fun consultarFicha(mapa: MapLibreMap, punto: PointF): FichaMapa? {
     }
     return null
 }
-

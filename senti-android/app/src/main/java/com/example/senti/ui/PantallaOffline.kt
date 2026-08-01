@@ -352,10 +352,10 @@ private fun BarraSincronizacion(
                     strokeWidth = 2.dp,
                     color = tinta,
                 )
-            } else if (hayRed) {
+            } else {
                 TextButton(onClick = onSincronizar) {
                     Text(
-                        "Actualizar datos",
+                        "Descargar datos",
                         color = tinta,
                         fontWeight = FontWeight.SemiBold,
                         style = MaterialTheme.typography.labelMedium,

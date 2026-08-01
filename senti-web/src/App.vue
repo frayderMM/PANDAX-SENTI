@@ -264,7 +264,10 @@ function fecha(iso: string | null) {
         <a href="#fuentes">Fuentes</a>
         <a href="#reportes">Reportes</a>
       </nav>
-      <a class="boton-cabecera" href="#reportes">Ver reportes</a>
+      <div class="acciones-cabecera">
+        <a class="boton-cabecera" href="#reportes">Ver reportes</a>
+        <a class="enlace-login" href="/login.html">Acceso municipal</a>
+      </div>
     </header>
 
     <main id="contenido">
@@ -569,6 +572,7 @@ function fecha(iso: string | null) {
         <a href="#actividad">Actividad</a>
         <a href="#fuentes">Fuentes</a>
         <a href="#reportes">Reportes</a>
+        <a href="/login.html">Acceso municipal</a>
       </div>
       <div class="footer-aviso">
         <strong>SENTI no reemplaza al canal oficial del Estado.</strong>
