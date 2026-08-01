@@ -113,3 +113,29 @@ class MunicipalNotice(UUIDPrimaryKey, Timestamped, Base):
     geom: Mapped[object | None] = mapped_column(
         Geometry(geometry_type="GEOMETRY", srid=SRID, spatial_index=True)
     )
+
+
+class AlertSubscriber(UUIDPrimaryKey, Timestamped, Base):
+    """Destinatario de alertas por WhatsApp, por distrito (§13.4).
+
+    Distinto a propósito de `User.phone_pseudonym`: ese es un hash de un solo
+    sentido, pensado para que el sistema nunca pueda escribirle a nadie por
+    su cuenta. Este modelo existe exactamente para lo contrario —el sistema
+    SÍ necesita el número real para poder avisar por WhatsApp— así que solo
+    se crea cuando la persona da el consentimiento explícito
+    `ConsentPurpose.ALERTAS_WHATSAPP` en el registro, nunca por inferencia.
+
+    `activo=False` es la forma de revocar sin borrar el historial de a quién
+    se le mandó qué (si algún día se registra el envío); revocar el
+    consentimiento en `/auth/consentimiento` pone esto en `False`.
+    """
+
+    __tablename__ = "alert_subscribers"
+
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    nombre: Mapped[str | None] = mapped_column(String(120))
+    telefono: Mapped[str] = mapped_column(String(32), nullable=False)
+    distrito: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    activo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)

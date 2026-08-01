@@ -42,15 +42,20 @@ class SincronizadorOffline(private val almacen: AlmacenZona) {
             )
         }
 
-        val reportes = runCatching {
-            Api.listarReportes(lat, lon, radioM = PaqueteZona.MEDIO_LADO_M * 2)
-        }.getOrElse {
-            fallidas += "reportes ciudadanos"
-            null
-        }
-
+        // Los reportes ciudadanos NO entran en el paquete, a propósito.
+        //
+        // Sin conexión no se pueden refrescar, ni validar, ni retirar cuando
+        // dejan de ser ciertos. Un reporte pendiente de hace tres días pintado
+        // sobre el mapa no informa: o asusta con algo que ya pasó, o —peor—
+        // tranquiliza al no aparecer donde sí hay peligro. Su valor entero
+        // depende de estar al día (§21.2), y eso es justo lo que aquí no se
+        // puede garantizar.
+        //
+        // Lo que sí se conserva son los conflictos con respaldo oficial: un
+        // cierre municipal sigue siendo un cierre mañana, y esa es la
+        // diferencia que lo hace utilizable sin red.
         val eventos = runCatching { Api.listarEventos() }.getOrElse {
-            fallidas += "bloqueos y conflictos viales"
+            fallidas += "bloqueos oficiales y conflictos viales"
             null
         }
 
@@ -59,46 +64,24 @@ class SincronizadorOffline(private val almacen: AlmacenZona) {
             emptyList()
         }
 
-        val conflictos = buildList {
-            eventos?.events?.forEach { e ->
-                val eLat = e.lat ?: return@forEach
-                val eLon = e.lon ?: return@forEach
-                if (!limites.contiene(eLat, eLon)) return@forEach
-                add(
-                    ConflictoOffline(
-                        id = e.id,
-                        tipo = e.type,
-                        titulo = e.title,
-                        lat = eLat,
-                        lon = eLon,
-                        // Un evento con respaldo de una fuente oficial es
-                        // vinculante; el resto es actividad reportada. La
-                        // distinción viaja al paquete porque el mapa la pinta
-                        // distinto y la ficha la escribe (§25).
-                        oficial = e.fuentesOficiales > 0,
-                        confianza = e.estado.lowercase(),
-                        reportadoAt = e.ultimoReporte,
-                    )
-                )
-            }
-            reportes?.reportes?.forEach { r ->
-                val rLat = r.lat ?: return@forEach
-                val rLon = r.lon ?: return@forEach
-                if (!limites.contiene(rLat, rLon)) return@forEach
-                add(
-                    ConflictoOffline(
-                        id = r.id,
-                        tipo = r.tipo,
-                        titulo = r.descripcion?.takeIf { it.isNotBlank() }
-                            ?: r.tipo.replace("_", " "),
-                        lat = rLat,
-                        lon = rLon,
-                        oficial = r.confirmado,
-                        confianza = r.confianza,
-                        reportadoAt = r.reportadoAt,
-                    )
-                )
-            }
+        val conflictos = eventos?.events.orEmpty().mapNotNull { e ->
+            val eLat = e.lat ?: return@mapNotNull null
+            val eLon = e.lon ?: return@mapNotNull null
+            if (!limites.contiene(eLat, eLon)) return@mapNotNull null
+            // Solo lo respaldado por una fuente oficial. Sin ese respaldo un
+            // evento es actividad reportada, y vale lo mismo que un reporte
+            // suelto: nada que se pueda sostener sin poder actualizarlo.
+            if (e.fuentesOficiales <= 0) return@mapNotNull null
+            ConflictoOffline(
+                id = e.id,
+                tipo = e.type,
+                titulo = e.title,
+                lat = eLat,
+                lon = eLon,
+                oficial = true,
+                confianza = e.estado.lowercase(),
+                reportadoAt = e.ultimoReporte,
+            )
         }
 
         val contenido = ContenidoZona(

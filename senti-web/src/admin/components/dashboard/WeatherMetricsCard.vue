@@ -5,9 +5,10 @@ import type { ClimaActual, PronosticoHora } from "../../types";
 
 defineProps<{
   zonaNombre: string;
-  clima: ClimaActual;
+  clima: ClimaActual | null;
   pronostico: PronosticoHora[];
   cargando: boolean;
+  error?: string;
 }>();
 </script>
 
@@ -16,8 +17,9 @@ defineProps<{
     <h2 class="weather-card__title">Condiciones actuales – Zona {{ zonaNombre }}</h2>
 
     <p v-if="cargando" class="weather-card__loading">Actualizando condiciones…</p>
+    <p v-else-if="error" class="weather-card__error" role="alert">{{ error }}</p>
 
-    <template v-else>
+    <template v-else-if="clima">
       <div class="weather-card__grid">
         <WeatherMetricItem
           icon="thermometer"
@@ -95,6 +97,12 @@ defineProps<{
 .weather-card__loading {
   padding: 20px 0;
   color: var(--texto-secundario);
+  font-size: 13px;
+}
+
+.weather-card__error {
+  padding: 20px 0;
+  color: var(--rojo);
   font-size: 13px;
 }
 

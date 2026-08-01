@@ -8,7 +8,14 @@ package com.example.senti.data
  * solo se les pone nombre en castellano y un color para el mapa. Ninguna
  * decisión depende de esta tabla: el backend clasifica, la app pinta.
  *
- * [desconocido] existe porque un cliente viejo puede recibir un tipo nuevo. La
+ * **Están los doce, no cinco.** La vigencia de un reporte depende de su tipo
+ * (§20.3: un puente afectado dura 7 días y un «otro» solo 12 horas), así que
+ * meter un huaico o un incendio bajo «Otro» por no tener botón propio no era
+ * una etiqueta imprecisa: le daba al reporte una vigencia mucho más corta de
+ * la que le corresponde.
+ *
+ * El tipo desconocido existe porque un cliente viejo puede recibir un tipo
+ * nuevo. La
  * alternativa —descartar lo que no se reconoce— haría desaparecer del mapa un
  * peligro real por no saber cómo llamarlo, que es la peor forma posible de
  * fallar en este sistema. Se muestra con su código crudo y color neutro.
@@ -22,7 +29,7 @@ enum class TipoDesastre(
     INUNDACION("inundacion", "Inundación", 0xFF1E88E5),
     HUAICO("huaico", "Huaico", 0xFF8D6E63),
     DESLIZAMIENTO("deslizamiento", "Deslizamiento", 0xFF6D4C41),
-    LLUVIA("lluvia", "Lluvia", 0xFF42A5F5),
+    LLUVIA("lluvia", "Lluvia intensa", 0xFF42A5F5),
     SISMO("sismo", "Sismo", 0xFFAB47BC),
     TSUNAMI("tsunami", "Tsunami", 0xFF00838F),
     INCENDIO("incendio", "Incendio", 0xFFE53935),

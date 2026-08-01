@@ -57,6 +57,7 @@ mensaje
 | confianza de un reporte | escalera §21.2 | `rules/trust.py` |
 | cobertura cartográfica | medición por distrito §20.4 | `routing/engine.py` |
 | fuente, hora, nivel oficial | backend | `rules/response.py` |
+| nivel de riesgo del tablero municipal | conteo de alertas críticas vigentes | `rules/municipal_dashboard.py` |
 | **redactar el texto** | **modelo** | `llm/` |
 
 ## Reglas duras
@@ -180,7 +181,7 @@ vacía basta con estar autenticado.
 | `POST /municipal/cierres/{id}/reabrir` | reapertura | `CONFIRMAR_CIERRE_VIA` |
 | `POST /municipal/recursos` | registra recurso oficial | `REGISTRAR_RECURSO` |
 | `POST /municipal/comunicados` | comunicado municipal | `PUBLICAR_COMUNICADO` |
-| `GET /municipal/tablero` | panel del operador | `PUBLICAR_COMUNICADO` |
+| `GET /municipal/tablero` | indicadores reales del panel municipal (§22), consumido por el Dashboard del operador y por `/info-general.html` | `PUBLICAR_COMUNICADO` |
 | `GET /municipal/mapa-calor` | GeoJSON **agregado por celda** (§22) | `PUBLICAR_COMUNICADO` |
 | `PUT /admin/usuarios/{id}/rol` | cambia el rol | `GESTIONAR_USUARIOS_Y_FUENTES` |
 | `POST /admin/parametros-riesgo` | versiona umbrales y pesos (§23) | `GESTIONAR_USUARIOS_Y_FUENTES` |
@@ -199,14 +200,23 @@ El acceso del portal municipal (`/login.html`) usa `POST /auth/login`; no simula
 una sesión en el navegador. El backend sigue siendo quien autentica y emite el
 token, y la interfaz solo permite continuar a los roles `operador_municipal` y
 `administrador`. Tras autenticarse, el portal abre `/admin.html#/dashboard`, el
-panel del operador (barra lateral con Dashboard y Alertas). Ese dashboard
-todavía trabaja con datos de ejemplo — clima, mapa de zona y métricas están
-pendientes de conectarse a Open-Meteo, Google Maps y al backend real.
+panel del operador (barra lateral con Dashboard y Alertas).
 
-El tablero con datos reales (`GET /municipal/tablero` y el mapa de calor
-agregado) sigue existiendo en `/info-general.html`: mismo `POST /auth/login`,
-pero sin token no muestra nada. Hoy es una pantalla aparte, no enlazada desde
-el panel del operador.
+El modelo de datos no tiene un concepto de "zona Centro/Norte/Sur": el piloto
+es un solo distrito (Lurigancho-Chosica), así que el Dashboard no simula una
+subdivisión que no existe — muestra el agregado real del municipio. Las
+tarjetas de resumen, "Últimas alertas" e "Incidencias recientes" vienen de
+`GET /municipal/tablero`; el nivel de riesgo y el color de cada alerta se
+clasifican en `rules/municipal_dashboard.py`, no en el frontend. El clima usa
+Open-Meteo directamente desde el navegador (sin backend propio, sin API key).
+Lo único que sigue siendo un mockup preparado para conectarse es el mapa de
+la zona (Google Maps real si existe `VITE_GOOGLE_MAPS_API_KEY`; si no,
+un esquema en SVG).
+
+El tablero con datos reales también sigue existiendo, sin cambios, en
+`/info-general.html` (mismo `GET /municipal/tablero`, mismo `POST
+/auth/login`): es una pantalla aparte, no enlazada desde el panel del
+operador, con su propio diseño.
 
 | Comprueba | Por qué ahí |
 |---|---|
@@ -481,9 +491,17 @@ tocando cada punto.
 ### El paquete de zona
 
 Se descarga con red, se lee sin ella, y cubre **10 km²** alrededor del usuario
-—un cuadrado de √10 km de lado— con lo que las fuentes ya publican: rutas ya
-calculadas, bloqueos y conflictos viales, reportes ciudadanos, recursos
-cercanos, teléfonos por región y la última alerta.
+—un cuadrado de √10 km de lado— con rutas ya calculadas, conflictos viales
+**con respaldo oficial**, recursos cercanos, teléfonos por región y la última
+alerta.
+
+**Los reportes ciudadanos no entran, y es deliberado.** Sin conexión no se
+pueden refrescar, ni validar, ni retirar cuando dejan de ser ciertos, y su
+valor entero depende de estar al día (§21.2). Un reporte pendiente de hace tres
+días pintado sobre el mapa no informa: o asusta con algo que ya pasó, o —peor—
+tranquiliza al no aparecer donde sí hay peligro. Un cierre municipal, en
+cambio, sigue siendo un cierre mañana, y esa es la diferencia que lo hace
+utilizable sin red.
 
 | Garantía | Cómo |
 |---|---|
@@ -498,9 +516,9 @@ OpenStreetMap durante la sincronización, la misma fuente que usa el importador
 del backend. Se guardan como referenciales: acreditan que el establecimiento
 existe y dónde, no que esté abierto ni designado como punto de acogida.
 
-El mapa distingue por color el cierre oficial del reporte ciudadano sin
-validar, y **el color nunca va solo**: la ficha que se abre al tocar lo repite
-en palabras (§25, §31.2).
+La ficha que se abre al tocar un punto dice de dónde sale el dato con palabras
+y no solo con el color (§25, §31.2), y repite que está descargado y pudo
+cambiar.
 
 ### La sesión
 
@@ -642,11 +660,20 @@ cuando hay una emergencia y llegan todos a la vez.
 | cabecera `X-Senti-Token` | Evolution no firma sus peticiones: sin secreto compartido, quien descubra la URL hace que SENTI escriba a quien él diga |
 | `SENTI_WHATSAPP_ENABLED=false` → 503 | un canal de emergencia a medio configurar que traga mensajes en silencio es peor que uno que declara que no está |
 
-**El teléfono nunca se guarda en claro** (§13.5). La conversación se busca y se
-crea por seudónimo; el número en claro vive en memoria el tiempo de contestar.
-Si ese seudónimo coincide con el de una cuenta, quien escribe tiene sus
-herramientas y su rol (§6); si no, entra como invitado y recibe información
-general (§13.4). El rol sale de la cuenta, nunca del canal.
+**El teléfono nunca se guarda en claro por defecto** (§13.5). La conversación
+se busca y se crea por seudónimo; el número en claro vive en memoria el
+tiempo de contestar. Si ese seudónimo coincide con el de una cuenta, quien
+escribe tiene sus herramientas y su rol (§6); si no, entra como invitado y
+recibe información general (§13.4). El rol sale de la cuenta, nunca del
+canal.
+
+La única excepción, y solo con consentimiento explícito y separado
+(`ConsentPurpose.ALERTAS_WHATSAPP`, no implícito por dar el teléfono en el
+registro): `AlertSubscriber` guarda nombre, teléfono y distrito en claro,
+porque es la única forma de que SENTI escriba por iniciativa propia en vez
+de solo responder. Revocar ese consentimiento en `POST /auth/consentimiento`
+desactiva la suscripción; el número sigue en la tabla (por si se reactiva)
+pero deja de recibir nada.
 
 Para que esa coincidencia ocurra, **el número se canoniza antes de calcular el
 seudónimo**. Los dos caminos lo traen escrito distinto: Evolution entrega
@@ -770,16 +797,21 @@ según el camino:
 
 ## Entidades (§27)
 
-28 tablas. El rol no es una de ellas: es un enum en la columna del usuario,
+29 tablas. El rol no es una de ellas: es un enum en la columna del usuario,
 validado en `core/security.py`.
 
 `users` `consents` `household_profiles` · `alerts` `alert_zones`
-`municipal_notices` · `official_sources` `source_health` `documents`
-`document_chunks` · `citizen_reports` `report_validations` `resources` ·
-`hazards` `affected_roads` `road_blocks` `routes` `route_segments` ·
-`family_plans` `plan_tasks` `conversations` `messages` `incidents` ·
-`audit_logs` `retention_jobs` `risk_parameters` `protocols`
+`alert_subscribers` `municipal_notices` · `official_sources` `source_health`
+`documents` `document_chunks` · `citizen_reports` `report_validations`
+`resources` · `hazards` `affected_roads` `road_blocks` `routes`
+`route_segments` · `family_plans` `plan_tasks` `conversations` `messages`
+`incidents` · `audit_logs` `retention_jobs` `risk_parameters` `protocols`
 `emergency_phones`
+
+`alert_subscribers` es la única tabla con un teléfono en claro (§13.4): nace
+solo del consentimiento explícito `ALERTAS_WHATSAPP` en `POST /auth/registro`,
+nunca por inferencia desde `users.phone_pseudonym` (que sigue siendo
+irreversible para todo lo demás).
 
 ## Herramientas (§16)
 

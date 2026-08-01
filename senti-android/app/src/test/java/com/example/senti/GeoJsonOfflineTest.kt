@@ -51,20 +51,21 @@ class GeoJsonOfflineTest {
     }
 
     @Test
-    fun `el conflicto oficial y el ciudadano se distinguen en las propiedades`() {
-        // El estilo filtra por esta propiedad para pintarlos de colores
-        // distintos. Si los dos salieran iguales, un reporte sin validar se
-        // vería como un cierre municipal, que es justo lo que el §25 prohíbe.
+    fun `el conflicto lleva su origen en las propiedades`() {
+        // Sin conexión el paquete solo guarda lo respaldado por una fuente
+        // oficial —un reporte ciudadano no se puede refrescar ni retirar sin
+        // red—, pero la propiedad viaja igual: es lo que la ficha lee para
+        // decir con palabras de dónde sale el dato (§25).
         val json = geoJsonConflictos(
             listOf(
                 ConflictoOffline("c1", "via_bloqueada", "Cierre municipal", -12.0, -77.0,
                     oficial = true, confianza = "confirmado"),
-                ConflictoOffline("c2", "huaico", "Reporte vecinal", -12.01, -77.01,
-                    oficial = false, confianza = "pendiente"),
+                ConflictoOffline("c2", "huaico", "Quebrada activada", -12.01, -77.01,
+                    oficial = true, confianza = "confirmado"),
             )
         )
         assertTrue(json.contains(""""oficial":"true""""))
-        assertTrue(json.contains(""""oficial":"false""""))
+        assertTrue(json.contains(""""confianza":"confirmado""""))
         assertEquals(2, contar(json, "\"Feature\""))
     }
 

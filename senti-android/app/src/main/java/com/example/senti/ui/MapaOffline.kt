@@ -11,11 +11,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.example.senti.data.ConflictoOffline
 import com.example.senti.data.EstiloOffline
 import com.example.senti.data.PaqueteZona
 import com.example.senti.data.Punto
-import com.example.senti.data.RecursoOffline
 import com.example.senti.data.geoJsonConflictos
 import com.example.senti.data.geoJsonRecursos
 import com.example.senti.data.geoJsonRutas
@@ -49,14 +47,13 @@ private const val ID_UBICACION_FUENTE = "senti-ubicacion-fuente"
 
 // El color nunca va solo: la ficha que se abre repite en palabras lo que el
 // color dice (§31.2). Aquí solo se decide cómo se ve de un vistazo.
-private const val COLOR_RUTA = "#4FC3F7"
+private const val COLOR_RUTA = "#0B63C5"
 private const val COLOR_OFICIAL = "#E53935"
-private const val COLOR_CIUDADANO = "#FB8C00"
 private const val COLOR_SALUD = "#26A69A"
 private const val COLOR_BOMBEROS = "#EF5350"
 private const val COLOR_REFUGIO = "#7E57C2"
 private const val COLOR_COMISARIA = "#5C6BC0"
-private const val COLOR_UBICACION = "#FFFFFF"
+private const val COLOR_UBICACION = "#1B76D2"
 
 /**
  * Mapa sin conexión.
@@ -186,7 +183,7 @@ private fun prepararCapas(estilo: Style) {
                 .withProperties(
                     PropertyFactory.circleColor(color),
                     PropertyFactory.circleRadius(6.0f),
-                    PropertyFactory.circleStrokeColor("#101418"),
+                    PropertyFactory.circleStrokeColor("#FFFFFF"),
                     PropertyFactory.circleStrokeWidth(1.5f),
                 )
                 .withFilter(Expression.eq(Expression.get("tipo"), Expression.literal(tipo)))
@@ -195,35 +192,25 @@ private fun prepararCapas(estilo: Style) {
 
     // Los conflictos van ENCIMA de los recursos: si un cierre cae sobre un
     // hospital, lo que hay que ver es el cierre.
+    //
+    // Una sola capa, porque sin conexión solo se guarda lo oficial. Los
+    // reportes ciudadanos no entran en el paquete: su valor depende de estar
+    // al día y aquí no se pueden refrescar ni retirar (§21.2).
     estilo.addLayer(
-        CircleLayer("${EstiloOffline.Capas.CONFLICTOS}-ciudadano", EstiloOffline.Capas.CONFLICTOS_FUENTE)
-            .withProperties(
-                PropertyFactory.circleColor(COLOR_CIUDADANO),
-                PropertyFactory.circleRadius(7.0f),
-                PropertyFactory.circleStrokeColor("#101418"),
-                PropertyFactory.circleStrokeWidth(1.5f),
-                // Semitransparente para que se distinga del cierre oficial
-                // también en escala de grises, no solo por el tono.
-                PropertyFactory.circleOpacity(0.75f),
-            )
-            .withFilter(Expression.eq(Expression.get("oficial"), Expression.literal("false")))
-    )
-    estilo.addLayer(
-        CircleLayer("${EstiloOffline.Capas.CONFLICTOS}-oficial", EstiloOffline.Capas.CONFLICTOS_FUENTE)
+        CircleLayer(EstiloOffline.Capas.CONFLICTOS, EstiloOffline.Capas.CONFLICTOS_FUENTE)
             .withProperties(
                 PropertyFactory.circleColor(COLOR_OFICIAL),
                 PropertyFactory.circleRadius(9.0f),
                 PropertyFactory.circleStrokeColor("#FFFFFF"),
                 PropertyFactory.circleStrokeWidth(2.0f),
             )
-            .withFilter(Expression.eq(Expression.get("oficial"), Expression.literal("true")))
     )
 
     estilo.addLayer(
         CircleLayer(ID_UBICACION, ID_UBICACION_FUENTE).withProperties(
             PropertyFactory.circleColor(COLOR_UBICACION),
             PropertyFactory.circleRadius(7.0f),
-            PropertyFactory.circleStrokeColor("#1B76D2"),
+            PropertyFactory.circleStrokeColor("#FFFFFF"),
             PropertyFactory.circleStrokeWidth(3.0f),
         )
     )
@@ -253,21 +240,12 @@ private fun pintar(estilo: Style, paquete: PaqueteZona?, miUbicacion: Punto?) {
  * porque si los dos caen en el mismo sitio lo que hay que leer es el peligro.
  */
 private fun consultarFicha(mapa: MapLibreMap, punto: PointF): FichaMapa? {
-    val capasConflicto = arrayOf(
-        "${EstiloOffline.Capas.CONFLICTOS}-oficial",
-        "${EstiloOffline.Capas.CONFLICTOS}-ciudadano",
-    )
-    mapa.queryRenderedFeatures(punto, *capasConflicto).firstOrNull()?.let { f ->
-        val oficial = f.getStringProperty("oficial") == "true"
+    mapa.queryRenderedFeatures(punto, EstiloOffline.Capas.CONFLICTOS).firstOrNull()?.let { f ->
         return FichaMapa(
             titulo = f.getStringProperty("titulo") ?: "Conflicto vial",
             lineas = listOfNotNull(
                 f.getStringProperty("tipo")?.replace("_", " "),
-                if (oficial) {
-                    "Cierre de fuente oficial o municipal. No intentes cruzarlo."
-                } else {
-                    "Reporte ciudadano todavía sin validar. No es un cierre oficial."
-                },
+                "Respaldado por una fuente oficial o municipal. No intentes cruzarlo.",
                 f.getStringProperty("confianza")?.let { "Confianza: $it" },
                 "Dato descargado. Puede haber cambiado.",
             ),
@@ -296,15 +274,3 @@ private fun consultarFicha(mapa: MapLibreMap, punto: PointF): FichaMapa? {
     return null
 }
 
-/** Etiqueta legible de un conflicto, para la lista de la pantalla. */
-fun etiquetaConflicto(c: ConflictoOffline): String =
-    if (c.oficial) "Oficial · ${c.titulo}" else "Sin validar · ${c.titulo}"
-
-/** Etiqueta legible de un recurso, para la lista de la pantalla. */
-fun etiquetaRecurso(r: RecursoOffline): String = when (r.tipo) {
-    "centro_salud" -> "Salud · ${r.nombre}"
-    "bomberos" -> "Bomberos · ${r.nombre}"
-    "refugio" -> "Refugio · ${r.nombre}"
-    "comisaria" -> "Comisaría · ${r.nombre}"
-    else -> r.nombre
-}

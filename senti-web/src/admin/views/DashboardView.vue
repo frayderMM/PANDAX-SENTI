@@ -1,41 +1,80 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import AdminHeader from "../AdminHeader.vue";
 import Icon from "../Icon.vue";
-import ZoneSelector from "../components/dashboard/ZoneSelector.vue";
 import SummaryCard from "../components/dashboard/SummaryCard.vue";
 import WeatherMetricsCard from "../components/dashboard/WeatherMetricsCard.vue";
 import ZoneMap from "../components/dashboard/ZoneMap.vue";
 import LatestAlertsCard from "../components/dashboard/LatestAlertsCard.vue";
 import ForecastChartCard from "../components/dashboard/ForecastChartCard.vue";
 import RecentIncidentsCard from "../components/dashboard/RecentIncidentsCard.vue";
-import { DASHBOARD_MOCK_POR_ZONA, ZONAS } from "../mocks/dashboardData";
-import { getCurrentWeatherByZone, getHourlyForecastByZone } from "../services/openMeteo";
-import type { ClimaActual, PronosticoHora, ZonaId } from "../types";
+import { MAPA_MUNICIPIO } from "../mocks/dashboardData";
+import { getCurrentWeather, getHourlyForecast } from "../services/openMeteo";
+import { getTableroMunicipal } from "../services/municipal";
+import type { AlertaResumen, ClimaActual, Incidencia, PronosticoHora, ResumenZona } from "../types";
 
-const zonaSeleccionada = ref<ZonaId>("centro");
-const datosZona = computed(() => DASHBOARD_MOCK_POR_ZONA[zonaSeleccionada.value]);
+const NOMBRE_MUNICIPIO = "Lurigancho-Chosica";
+
+const RESUMEN_VACIO: ResumenZona = {
+  ciudadanosRegistrados: 0,
+  ciudadanosNuevosSemana: 0,
+  incidenciasReportadas: 0,
+  incidenciasHoy: 0,
+  alertasActivas: 0,
+  alertasCriticas: 0,
+  alertasModeradas: 0,
+  riesgo: { etiqueta: "Bajo", detalle: "Sin datos todavía" },
+};
+
+const resumen = ref<ResumenZona>(RESUMEN_VACIO);
+const alertas = ref<AlertaResumen[]>([]);
+const incidencias = ref<Incidencia[]>([]);
+const cargandoTablero = ref(true);
+const errorTablero = ref("");
+
+async function cargarTablero() {
+  cargandoTablero.value = true;
+  errorTablero.value = "";
+  try {
+    const tablero = await getTableroMunicipal();
+    resumen.value = tablero.resumen;
+    alertas.value = tablero.alertas;
+    incidencias.value = tablero.incidencias;
+  } catch (motivo) {
+    errorTablero.value =
+      motivo instanceof Error ? motivo.message : "No se pudo cargar el panel municipal.";
+  } finally {
+    cargandoTablero.value = false;
+  }
+}
 
 const clima = ref<ClimaActual | null>(null);
 const pronostico = ref<PronosticoHora[]>([]);
 const cargandoClima = ref(true);
+const errorClima = ref("");
 const actualizadoEn = ref(new Date());
 const ahora = ref(new Date());
 let temporizador: ReturnType<typeof setInterval> | undefined;
 
 async function cargarClima() {
   cargandoClima.value = true;
-  const [actual, horas] = await Promise.all([
-    getCurrentWeatherByZone(zonaSeleccionada.value),
-    getHourlyForecastByZone(zonaSeleccionada.value),
-  ]);
-  clima.value = actual;
-  pronostico.value = horas;
-  cargandoClima.value = false;
-  actualizadoEn.value = new Date();
+  errorClima.value = "";
+  try {
+    const [actual, horas] = await Promise.all([getCurrentWeather(), getHourlyForecast()]);
+    clima.value = actual;
+    pronostico.value = horas;
+    actualizadoEn.value = new Date();
+  } catch (motivo) {
+    clima.value = null;
+    pronostico.value = [];
+    errorClima.value =
+      motivo instanceof Error
+        ? `No se pudieron obtener los datos meteorológicos: ${motivo.message}`
+        : "No se pudieron obtener los datos meteorológicos.";
+  } finally {
+    cargandoClima.value = false;
+  }
 }
-
-watch(zonaSeleccionada, cargarClima);
 
 const textoActualizacion = computed(() => {
   const minutos = Math.max(
@@ -56,6 +95,7 @@ const resumenPronostico = computed(() => {
 });
 
 onMounted(() => {
+  cargarTablero();
   cargarClima();
   temporizador = setInterval(() => (ahora.value = new Date()), 30000);
 });
@@ -69,38 +109,38 @@ onUnmounted(() => {
   <div>
     <AdminHeader
       title="Dashboard"
-      subtitle="Monitorea condiciones, pronóstico y actividad de tu zona asignada."
+      subtitle="Monitorea condiciones, pronóstico y actividad del municipio."
     />
 
-    <ZoneSelector v-model="zonaSeleccionada" :zonas="ZONAS" />
+    <p v-if="errorTablero" class="dashboard__aviso" role="alert">{{ errorTablero }}</p>
 
     <div class="dashboard__summary">
       <SummaryCard
         icon="users"
         title="Ciudadanos registrados"
-        :value="datosZona.resumen.ciudadanosRegistrados.toLocaleString('es-PE')"
-        :detail="`+${datosZona.resumen.ciudadanosNuevosSemana} esta semana`"
+        :value="resumen.ciudadanosRegistrados.toLocaleString('es-PE')"
+        :detail="`+${resumen.ciudadanosNuevosSemana} esta semana`"
         tone="azul"
       />
       <SummaryCard
         icon="file-text"
         title="Incidencias reportadas"
-        :value="String(datosZona.resumen.incidenciasReportadas)"
-        :detail="`+${datosZona.resumen.incidenciasHoy} hoy`"
+        :value="String(resumen.incidenciasReportadas)"
+        :detail="`+${resumen.incidenciasHoy} hoy`"
         tone="violeta"
       />
       <SummaryCard
         icon="bell"
         title="Alertas activas"
-        :value="String(datosZona.resumen.alertasActivas)"
-        :detail="`${datosZona.resumen.alertasCriticas} críticas · ${datosZona.resumen.alertasModeradas} moderadas`"
+        :value="String(resumen.alertasActivas)"
+        :detail="`${resumen.alertasCriticas} críticas · ${resumen.alertasModeradas} moderadas`"
         tone="rojo"
       />
       <SummaryCard
         icon="alert-triangle"
         title="Nivel de riesgo actual"
-        :value="datosZona.resumen.riesgo.etiqueta"
-        :detail="datosZona.resumen.riesgo.detalle"
+        :value="resumen.riesgo.etiqueta"
+        :detail="resumen.riesgo.detalle"
         tone="amarillo"
         value-badge
       />
@@ -108,19 +148,23 @@ onUnmounted(() => {
 
     <div class="dashboard__main">
       <WeatherMetricsCard
-        v-if="clima"
-        :zona-nombre="datosZona.nombre"
+        :zona-nombre="NOMBRE_MUNICIPIO"
         :clima="clima"
         :pronostico="pronostico"
         :cargando="cargandoClima"
+        :error="errorClima"
       />
-      <ZoneMap :zona="datosZona.mapa" />
+      <ZoneMap :zona="MAPA_MUNICIPIO" />
     </div>
 
     <div class="dashboard__bottom">
-      <LatestAlertsCard :alertas="datosZona.alertas" />
-      <ForecastChartCard :puntos="pronostico" :resumen="resumenPronostico" />
-      <RecentIncidentsCard :incidencias="datosZona.incidencias" />
+      <LatestAlertsCard :alertas="alertas" />
+      <ForecastChartCard v-if="pronostico.length" :puntos="pronostico" :resumen="resumenPronostico" />
+      <section v-else class="dashboard__chart-vacio">
+        <h2 class="dashboard__chart-vacio-title">Pronóstico próximas horas</h2>
+        <p>{{ cargandoClima ? "Cargando pronóstico…" : (errorClima || "Pronóstico no disponible.") }}</p>
+      </section>
+      <RecentIncidentsCard :incidencias="incidencias" />
     </div>
 
     <footer class="dashboard__footer">
@@ -131,6 +175,15 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.dashboard__aviso {
+  margin: -8px 0 16px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--rojo-tenue);
+  color: var(--rojo);
+  font-size: 13px;
+}
+
 .dashboard__summary {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -151,6 +204,23 @@ onUnmounted(() => {
   grid-template-columns: repeat(3, 1fr);
   gap: 20px;
   align-items: stretch;
+}
+
+.dashboard__chart-vacio {
+  padding: 20px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 16px;
+  box-shadow: 0 2px 10px rgba(7, 27, 74, 0.04);
+  color: var(--texto-secundario);
+  font-size: 13px;
+}
+
+.dashboard__chart-vacio-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--azul-oscuro);
+  margin-bottom: 8px;
 }
 
 .dashboard__footer {

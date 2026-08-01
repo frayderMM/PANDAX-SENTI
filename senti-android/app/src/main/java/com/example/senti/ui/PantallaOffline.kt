@@ -73,6 +73,12 @@ import com.example.senti.data.formatearFechaHora
  * hay cerca y qué hacer. Y encima de todo, la fecha: nada de lo que se ve aquí
  * es de ahora.
  */
+// Tinta sobre las tarjetas claras que flotan encima del mapa. No se usa el
+// color del tema: estas superficies son siempre claras —van sobre un mapa
+// claro— y con tema oscuro el texto del tema saldría casi blanco sobre blanco.
+private val TINTA = Color(0xFF1A1C1E)
+private val TINTA_SUAVE = Color(0xFF44474A)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PantallaOffline(
@@ -96,7 +102,7 @@ fun PantallaOffline(
     var guiaAbierta by remember { mutableStateOf<Guia?>(null) }
     var confirmarSalida by remember { mutableStateOf(false) }
 
-    Box(modifier.fillMaxSize().background(Color(0xFF0F1418))) {
+    Box(modifier.fillMaxSize().background(Color(0xFFEFEBE4))) {
 
         LienzoMapaOffline(
             packs = packs,
@@ -187,18 +193,18 @@ fun PantallaOffline(
         // orientarse aunque no haya datos de la zona.
         if (paquete == null && motivoSinPaquete == null && preparado) {
             Surface(
-                color = Color(0xE6101418),
+                color = Color(0xF2FFFFFF),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .align(Alignment.Center)
                     .padding(28.dp),
             ) {
                 Column(Modifier.padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Filled.CloudOff, contentDescription = null, tint = Color.White)
+                    Icon(Icons.Filled.CloudOff, contentDescription = null, tint = TINTA)
                     Spacer(Modifier.height(8.dp))
                     Text(
                         "No hay datos offline descargados para esta zona",
-                        color = Color.White,
+                        color = TINTA,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
@@ -207,7 +213,7 @@ fun PantallaOffline(
                     Text(
                         "Cuando tengas conexión, pulsa «Actualizar datos» para " +
                             "descargar los 10 km² de tu zona.",
-                        color = Color.White.copy(alpha = 0.75f),
+                        color = TINTA_SUAVE,
                         style = MaterialTheme.typography.labelMedium,
                         textAlign = TextAlign.Center,
                     )
@@ -294,8 +300,14 @@ private fun BarraSincronizacion(
     onSincronizar: () -> Unit,
 ) {
     val vencido = paquete?.vencido() == true
+    // Sobre el rojo de vencido el texto va en blanco; sobre la tarjeta clara,
+    // en tinta. El rojo se conserva porque aquí el color sí significa gravedad
+    // (§12): es el único aviso de que los datos ya no son presentables.
+    val tinta = if (vencido) Color.White else TINTA
+    val tintaSuave = if (vencido) Color.White.copy(alpha = 0.85f) else TINTA_SUAVE
+
     Surface(
-        color = if (vencido) Color(0xE6B3261E) else Color(0xE6202A33),
+        color = if (vencido) Color(0xF2B3261E) else Color(0xF2FFFFFF),
         shape = RoundedCornerShape(10.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -306,14 +318,14 @@ private fun BarraSincronizacion(
             Icon(
                 Icons.Filled.CloudOff,
                 contentDescription = null,
-                tint = Color.White,
+                tint = tinta,
                 modifier = Modifier.size(18.dp),
             )
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     "MODO SIN CONEXIÓN",
-                    color = Color.White,
+                    color = tinta,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.labelMedium,
                 )
@@ -322,13 +334,13 @@ private fun BarraSincronizacion(
                     paquete?.let {
                         "Datos del ${formatearFechaHora(it.sincronizadoAt)}"
                     } ?: "Sin datos descargados",
-                    color = Color.White.copy(alpha = 0.85f),
+                    color = tintaSuave,
                     style = MaterialTheme.typography.labelMedium,
                 )
                 if (vencido) {
                     Text(
                         "Vencidos. Pueden no reflejar la situación actual.",
-                        color = Color.White,
+                        color = tinta,
                         fontWeight = FontWeight.SemiBold,
                         style = MaterialTheme.typography.labelMedium,
                     )
@@ -338,11 +350,16 @@ private fun BarraSincronizacion(
                 CircularProgressIndicator(
                     Modifier.size(18.dp),
                     strokeWidth = 2.dp,
-                    color = Color.White,
+                    color = tinta,
                 )
             } else if (hayRed) {
                 TextButton(onClick = onSincronizar) {
-                    Text("Actualizar datos", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        "Actualizar datos",
+                        color = tinta,
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.labelMedium,
+                    )
                 }
             }
         }
@@ -351,16 +368,16 @@ private fun BarraSincronizacion(
 
 @Composable
 private fun AvisoOffline(texto: String) {
-    Surface(color = Color(0xE68A6D00), shape = RoundedCornerShape(10.dp)) {
+    Surface(color = Color(0xFFFFF3CD), shape = RoundedCornerShape(10.dp)) {
         Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.Top) {
             Icon(
                 Icons.Filled.Warning,
                 contentDescription = null,
-                tint = Color.White,
+                tint = Color(0xFF7A5B00),
                 modifier = Modifier.size(16.dp),
             )
             Spacer(Modifier.width(8.dp))
-            Text(texto, color = Color.White, style = MaterialTheme.typography.labelMedium)
+            Text(texto, color = Color(0xFF4A3800), style = MaterialTheme.typography.labelMedium)
         }
     }
 }
@@ -374,10 +391,10 @@ private fun BotonOffline(
     Row(verticalAlignment = Alignment.CenterVertically) {
         // La etiqueta va SIEMPRE al lado y no solo al mantener pulsado: un
         // icono sin texto se adivina, y aquí adivinar cuesta tiempo.
-        Surface(color = Color(0xCC101418), shape = RoundedCornerShape(6.dp)) {
+        Surface(color = Color(0xF2FFFFFF), shape = RoundedCornerShape(6.dp)) {
             Text(
                 etiqueta,
-                color = Color.White,
+                color = TINTA,
                 style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             )

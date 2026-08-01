@@ -73,6 +73,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -189,6 +190,23 @@ private val COLOR_AMARILLO = Color(0xFF8A6D00)
 private val COLOR_VERDE = Color(0xFF1B5E20)
 private val COLOR_SIN_CONEXION = Color(0xFF49454F)
 
+/**
+ * Alturas de los mapas incrustados en las pantallas de reportes.
+ *
+ * Antes uno pedía 750 dp y el otro 660 dp, fijos, dentro de columnas sin
+ * desplazamiento propio. En un teléfono normal —bastante menos de 750 dp de
+ * alto una vez descontadas la cabecera y la barra inferior— el mapa se salía
+ * de la pantalla y arrastraba con él lo que venía debajo: en "Tu zona" la
+ * lista de reportes quedaba pintada fuera del área visible, sin scroll que la
+ * trajera de vuelta, así que abrir la pestaña no mostraba ningún reporte.
+ *
+ * Estos valores caben con margen en un teléfono pequeño, y las pantallas que
+ * los usan ahora van dentro de un `LazyColumn`: con letra grande o en tableta
+ * el resto del contenido se desplaza en vez de recortarse.
+ */
+private val ALTURA_MAPA_RESUMEN = 240.dp
+private val ALTURA_MAPA_SELECCION = 260.dp
+
 private fun colorUrgencia(urgencia: String?): Color = when (urgencia) {
     "rojo" -> COLOR_ROJO
     "naranja" -> COLOR_NARANJA
@@ -205,6 +223,9 @@ private fun etiquetaUrgencia(urgencia: String?): String = when (urgencia) {
     else -> ""
 }
 
+// Las etiquetas de tipo viven ahora en `TipoDesastre`, que además lleva el
+// color que usan el filtro y los marcadores del mapa. Había dos tablas y no
+// coincidían.
 
 private data class ImagenPreparada(val base64: String)
 
@@ -280,8 +301,8 @@ fun PantallaSenti(modifier: Modifier = Modifier) {
             autenticando = estado.autenticando,
             error = estado.error,
             onLogin = { email, pass -> vm.iniciarSesion(email, pass) },
-            onRegistro = { email, pass, nombre, telefono, distrito ->
-                vm.registrar(email, pass, nombre, telefono, distrito)
+            onRegistro = { email, pass, nombre, distrito, telefono, recibirAlertas ->
+                vm.registrar(email, pass, nombre, distrito, telefono, recibirAlertas)
             },
             // Solo se ofrece si hubo un login online de verdad en este
             // teléfono. Sin eso no hay nada que recuperar y el botón sería
@@ -611,6 +632,12 @@ private fun PantallaChat(
     var imagenSeleccionada by remember { mutableStateOf<Uri?>(null) }
     var errorImagen by remember { mutableStateOf<String?>(null) }
     var fotoTemporal by remember { mutableStateOf<Uri?>(null) }
+    // "Nuevo chat" no borra nada del servidor, pero sí saca de la vista la
+    // conversación que se está leyendo, y esta pantalla no ofrece ninguna
+    // lista de hilos anteriores a la que volver para recuperarla. El botón
+    // está justo al lado del de ubicación, así que un toque de más es fácil;
+    // solo se pide confirmación cuando de verdad hay algo que perder.
+    var confirmarNuevoChat by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val listState = rememberLazyListState()
 
@@ -665,7 +692,13 @@ private fun PantallaChat(
             accion = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
-                        onClick = vm::nuevoChat,
+                        onClick = {
+                            if (estado.mensajes.isNotEmpty()) {
+                                confirmarNuevoChat = true
+                            } else {
+                                vm.nuevoChat()
+                            }
+                        },
                         modifier = Modifier.size(42.dp),
                     ) {
                         Icon(
@@ -884,6 +917,29 @@ private fun PantallaChat(
             }
         }
     }
+
+    if (confirmarNuevoChat) {
+        AlertDialog(
+            onDismissRequest = { confirmarNuevoChat = false },
+            icon = { Icon(Icons.Filled.Warning, contentDescription = null) },
+            title = { Text("¿Empezar un chat nuevo?") },
+            text = {
+                Text(
+                    "Dejarás de ver esta conversación en la app. No se borra del " +
+                        "servidor, pero aquí no hay forma de volver a abrirla.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { confirmarNuevoChat = false; vm.nuevoChat() }) {
+                    Text("Empezar de nuevo")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmarNuevoChat = false }) { Text("Seguir aquí") }
+            },
+        )
+    }
 }
 
 /** Destino temporal para la foto de la cámara. */
@@ -1028,15 +1084,14 @@ private fun PantallaReportes(
         )
 
         Box(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
-            Spacer(Modifier.height(14.dp))
-            Column(Modifier.fillMaxSize()) {
-                if (creando) {
-                    FormularioReporte(estado, onCrearReporte)
-                } else {
-                    ReportesMapa(estado.reportes, estado.lat, estado.lon)
-                    Spacer(Modifier.height(12.dp))
-                    ListaReportes(estado) { onCargarReportes(null, null) }
-                }
+            if (creando) {
+                FormularioReporte(estado, onCrearReporte)
+            } else {
+                ListaReportes(
+                    estado = estado,
+                    onRecargar = { onCargarReportes(null, null) },
+                    encabezado = { ReportesMapa(estado.reportes, estado.lat, estado.lon) },
+                )
             }
 
             // Reportes se consulta desde la pestaña inferior; crear un reporte
@@ -1114,9 +1169,7 @@ private fun ReportesMapa(
     }
 
     Surface(
-        // Área ampliada al 300% para que los eventos y reportes sean legibles
-        // y fáciles de seleccionar en pantallas pequeñas.
-        modifier = Modifier.fillMaxWidth().height(750.dp),
+        modifier = Modifier.fillMaxWidth().height(ALTURA_MAPA_RESUMEN),
         shape = RoundedCornerShape(Radios.tarjetaGrande),
         shadowElevation = 3.dp,
     ) {
@@ -1377,104 +1430,75 @@ private fun etiquetaConfianza(confianza: String): String = when (confianza) {
 }
 
 /**
- * Selector de dos pestañas con fondo deslizante.
+ * Mapa y lista de reportes de la zona, en un único `LazyColumn`.
  *
- * Sustituye a dos chips independientes. Con chips, "Ver reportes" y "Reportar"
- * parecían dos botones que hacían cosas distintas, cuando en realidad son dos
- * vistas de lo mismo y solo una puede estar activa. El carril compartido lo
- * dice sin explicarlo.
+ * Antes el mapa y la lista vivían en una `Column` sin desplazamiento propio.
+ * Con el mapa a 750 dp de alto, en cualquier teléfono normal la lista quedaba
+ * empujada fuera del área visible sin ninguna forma de llegar a ella —"Tu
+ * zona" parecía no tener reportes cuando en realidad estaban ahí, invisibles.
+ * Un solo `LazyColumn` con el mapa como primer elemento hace que todo el
+ * contenido se desplace junto y quepa en cualquier tamaño de pantalla.
+ *
+ * `contentPadding` deja hueco abajo para que el botón flotante de "nuevo
+ * reporte" no tape ni el último reporte ni el aviso que va debajo.
  */
-@Composable
-private fun SelectorPestanas(
-    opciones: List<String>,
-    seleccionada: Int,
-    onSeleccionar: (Int) -> Unit,
-) {
-    Surface(
-        shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(Modifier.padding(4.dp)) {
-            opciones.forEachIndexed { i, texto ->
-                val activa = i == seleccionada
-                Surface(
-                    onClick = { onSeleccionar(i) },
-                    shape = RoundedCornerShape(50),
-                    color = if (activa) {
-                        MaterialTheme.colorScheme.surface
-                    } else {
-                        Color.Transparent
-                    },
-                    shadowElevation = if (activa) 2.dp else 0.dp,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(
-                        texto,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = if (activa) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 11.dp),
-                    )
-                }
-            }
-        }
-    }
-}
-
 @Composable
 private fun ListaReportes(
     estado: com.example.senti.ui.SentiUiState,
     onRecargar: () -> Unit,
+    encabezado: @Composable () -> Unit,
 ) {
     var reporteSeleccionado by remember { mutableStateOf<com.example.senti.data.ReporteResumen?>(null) }
-    if (estado.cargandoReportes && estado.reportes.isEmpty()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-            Spacer(Modifier.width(8.dp))
-            Text("Buscando reportes…", style = MaterialTheme.typography.bodySmall)
-        }
-        return
-    }
 
-    if (estado.reportes.isEmpty()) {
-        Card(colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )) {
-            Column(Modifier.padding(14.dp)) {
-                Text("No hay reportes vigentes cerca", fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(4.dp))
-                // §11.3 y §12: ausencia de reportes no es ausencia de peligro.
-                Text(
-                    "Que nadie haya reportado no significa que no haya peligro. " +
-                        "Si ves algo, repórtalo.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(10.dp))
-                OutlinedButton(onClick = onRecargar) { Text("Actualizar") }
-            }
-        }
-        return
-    }
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(top = 14.dp, bottom = 96.dp),
+    ) {
+        item { encabezado() }
 
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(estado.reportes) { r -> TarjetaReporte(r) { reporteSeleccionado = r } }
-        item {
-            Spacer(Modifier.height(4.dp))
-            OutlinedButton(onClick = onRecargar, modifier = Modifier.fillMaxWidth()) {
-                Text("Actualizar")
+        when {
+            estado.cargandoReportes && estado.reportes.isEmpty() -> item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Buscando reportes…", style = MaterialTheme.typography.bodySmall)
+                }
             }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "Los reportes ciudadanos sin validar no son información oficial.",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            estado.reportes.isEmpty() -> item {
+                Card(colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text("No hay reportes vigentes cerca", fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(4.dp))
+                        // §11.3 y §12: ausencia de reportes no es ausencia de peligro.
+                        Text(
+                            "Que nadie haya reportado no significa que no haya peligro. " +
+                                "Si ves algo, repórtalo.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedButton(onClick = onRecargar) { Text("Actualizar") }
+                    }
+                }
+            }
+            else -> {
+                items(estado.reportes) { r -> TarjetaReporte(r) { reporteSeleccionado = r } }
+                item {
+                    Column {
+                        OutlinedButton(onClick = onRecargar, modifier = Modifier.fillMaxWidth()) {
+                            Text("Actualizar")
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Los reportes ciudadanos sin validar no son información oficial.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -1482,19 +1506,33 @@ private fun ListaReportes(
         AlertDialog(
             onDismissRequest = { reporteSeleccionado = null },
             title = { Text(TipoDesastre.etiquetaDe(reporte.tipo)) },
+            // El detalle es un superconjunto de lo que ya se ve en la
+            // tarjeta —distrito y fecha incluidos— y no un subconjunto: antes
+            // se perdían al abrir "más información", que es justo al revés
+            // de lo que alguien espera al pedir más detalle.
             text = {
                 Column {
                     Text(etiquetaConfianza(reporte.confianza), color = colorConfianza(reporte.confianza))
                     Spacer(Modifier.height(8.dp))
-                    Text(reporte.descripcion ?: "Sin descripción adicional.")
-                    reporte.direccion?.takeIf { it.isNotBlank() }?.let {
+                    Text(reporte.descripcion?.takeIf { it.isNotBlank() } ?: "Sin descripción adicional.")
+                    val ubicacion = listOfNotNull(
+                        reporte.direccion?.takeIf { it.isNotBlank() },
+                        reporte.distrito?.takeIf { it.isNotBlank() },
+                    ).joinToString(" · ")
+                    if (ubicacion.isNotBlank()) {
                         Spacer(Modifier.height(8.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.Place, contentDescription = "Ubicación", modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text(it)
+                            Text(ubicacion)
                         }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Reportado: ${reporte.reportadoAt.take(16).replace('T', ' ')}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             },
             confirmButton = { TextButton(onClick = { reporteSeleccionado = null }) { Text("Cerrar") } },
@@ -1569,7 +1607,15 @@ private fun TarjetaReporte(
                     Spacer(Modifier.height(9.dp))
                     Text(it, style = MaterialTheme.typography.bodyMedium)
                 }
-                r.direccion?.takeIf { it.isNotBlank() }?.let {
+                // El distrito faltaba en la tarjeta aunque el dato ya viaja en
+                // `ReporteResumen`. Con reportes cargados por radio y no por
+                // distrito, verlo de un vistazo en cada tarjeta evita tener
+                // que abrir el mapa para saber dónde cae cada uno.
+                val ubicacion = listOfNotNull(
+                    r.direccion?.takeIf { it.isNotBlank() },
+                    r.distrito?.takeIf { it.isNotBlank() },
+                ).joinToString(" · ")
+                if (ubicacion.isNotBlank()) {
                     Spacer(Modifier.height(7.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
@@ -1580,7 +1626,7 @@ private fun TarjetaReporte(
                         )
                         Spacer(Modifier.width(5.dp))
                         Text(
-                            it,
+                            ubicacion,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1614,7 +1660,13 @@ private fun FormularioReporte(
     var lon by remember { mutableStateOf("") }
     var fotoBase64 by remember { mutableStateOf<String?>(null) }
     var fotoPreview by remember { mutableStateOf<Bitmap?>(null) }
-    val tipos = listOf("inundacion", "huaico", "via_bloqueada", "sismo", "otro")
+    // Los 12 tipos que reconoce el backend (§20.3), no solo 5: elegir el
+    // correcto no es cosmético, decide cuánto dura vigente el reporte.
+    val tipos = listOf(
+        "inundacion", "huaico", "deslizamiento", "lluvia", "via_bloqueada",
+        "puente_afectado", "acumulacion_agua", "sismo", "tsunami", "incendio",
+        "caida_poste", "otro",
+    )
 
     val selector = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
@@ -1628,7 +1680,12 @@ private fun FormularioReporte(
         }
     }
 
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    // `contentPadding` bottom deja hueco para el botón flotante de cerrar el
+    // formulario, que si no tapa el botón de enviar justo cuando se llega a él.
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(bottom = 96.dp),
+    ) {
         item {
             Text("¿Qué viste?", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(6.dp))
@@ -1766,10 +1823,13 @@ private fun TipoReporteChip(
     seleccionado: Boolean,
     onClick: () -> Unit,
 ) {
+    // Radios.chip (12 dp) y no 8: el resto de la app sigue la escala de
+    // Formas.kt, y 8 dp es justo el valor "de escritorio de hace diez años"
+    // que esa escala existe para evitar.
     if (seleccionado) {
         Button(
             onClick = onClick,
-            shape = RoundedCornerShape(8.dp),
+            shape = RoundedCornerShape(Radios.chip),
             contentPadding = ButtonDefaults.ContentPadding,
         ) {
             Text(texto)
@@ -1777,7 +1837,7 @@ private fun TipoReporteChip(
     } else {
         OutlinedButton(
             onClick = onClick,
-            shape = RoundedCornerShape(8.dp),
+            shape = RoundedCornerShape(Radios.chip),
             contentPadding = ButtonDefaults.ContentPadding,
         ) {
             Text(texto)
@@ -1923,7 +1983,7 @@ private fun PantallaAcceso(
     autenticando: Boolean,
     error: String?,
     onLogin: (String, String) -> Unit,
-    onRegistro: (String, String, String?, String?, String?) -> Unit,
+    onRegistro: (String, String, String?, String?, String?, Boolean) -> Unit,
     sesionGuardada: SesionLocal? = null,
     hayRed: Boolean = true,
     onEntrarSinConexion: () -> Unit = {},
@@ -1932,18 +1992,22 @@ private fun PantallaAcceso(
     var email by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
     var nombre by remember { mutableStateOf("") }
-    var telefono by remember { mutableStateOf("") }
     var distrito by remember { mutableStateOf("") }
+    var telefono by remember { mutableStateOf("") }
+    var recibirAlertas by remember { mutableStateOf(false) }
 
-    // El teléfono se exige en el alta y no en el login: es el dato que enlaza
-    // la cuenta con WhatsApp, que es el canal que sigue funcionando cuando la
-    // app no puede (§10.1). Nueve dígitos es el móvil peruano; se comprueba
-    // sobre los dígitos para que dé igual cómo lo escriba cada uno.
+    // El número se comprueba sobre sus dígitos, para que dé igual cómo lo
+    // escriba cada uno. Nueve dígitos empezando por 9 es el móvil peruano; el
+    // backend le antepone el 51 al canonizarlo.
+    //
+    // Es opcional: quien no lo dé se registra igual y usa la app. Lo que no
+    // puede es quedar a medias — un número mal escrito no avisa a nadie y
+    // además nadie se entera de que no avisó.
     val digitosTelefono = telefono.filter { it.isDigit() }
     val telefonoValido = digitosTelefono.length == 9 && digitosTelefono.startsWith("9")
 
     val puedeEnviar = email.isNotBlank() && pass.isNotBlank() && !autenticando &&
-        (!modoRegistro || telefonoValido)
+        (!modoRegistro || telefono.isBlank() || telefonoValido)
 
     Box(
         modifier
@@ -2074,26 +2138,40 @@ private fun PantallaAcceso(
                         )
                         Spacer(Modifier.height(12.dp))
                         OutlinedTextField(
+                            value = distrito,
+                            onValueChange = { distrito = it },
+                            label = { Text("Distrito (opcional)") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(28.dp),
+                            colors = coloresCampoPildora(),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
                             value = telefono,
-                            // Se filtra al escribir en vez de rechazar al
-                            // enviar: un campo que acepta letras y luego dice
-                            // que no valen hace escribir dos veces.
+                            // Se filtran las letras al escribir en vez de
+                            // rechazarlas al enviar: un campo que las acepta y
+                            // luego dice que no valen hace escribir dos veces.
                             onValueChange = { nuevo ->
                                 telefono = nuevo.filter { it.isDigit() || it == ' ' }.take(12)
                             },
-                            label = { Text("Celular") },
+                            label = { Text("Teléfono WhatsApp (opcional)") },
                             placeholder = { Text("9XX XXX XXX") },
                             singleLine = true,
                             isError = telefono.isNotBlank() && !telefonoValido,
                             supportingText = {
                                 Text(
                                     if (telefono.isNotBlank() && !telefonoValido) {
+                                        // Un número mal escrito no avisa a
+                                        // nadie, y además nadie se entera de
+                                        // que no avisó. Se dice al teclearlo.
                                         "Nueve dígitos y empieza por 9."
                                     } else {
                                         // §13.5, dicho donde se pide el dato y
                                         // no en un enlace legal que nadie abre.
-                                        "Se guarda cifrado, nunca en claro. Sirve para " +
-                                            "atenderte por WhatsApp si la app no puede."
+                                        "En tu cuenta se guarda cifrado y de un solo " +
+                                            "sentido. Solo se conserva para poder " +
+                                            "escribirte si marcas la casilla de abajo."
                                     },
                                     style = MaterialTheme.typography.labelSmall,
                                 )
@@ -2103,16 +2181,18 @@ private fun PantallaAcceso(
                             modifier = Modifier.fillMaxWidth(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                         )
-                        Spacer(Modifier.height(12.dp))
-                        OutlinedTextField(
-                            value = distrito,
-                            onValueChange = { distrito = it },
-                            label = { Text("Distrito (opcional)") },
-                            singleLine = true,
-                            shape = RoundedCornerShape(28.dp),
-                            colors = coloresCampoPildora(),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        Spacer(Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = recibirAlertas,
+                                onCheckedChange = { recibirAlertas = it },
+                            )
+                            Text(
+                                "Avísenme por WhatsApp de las alertas de mi distrito. " +
+                                    "Necesita teléfono y distrito.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                     }
 
                     error?.let {
@@ -2132,13 +2212,15 @@ private fun PantallaAcceso(
                                 onRegistro(
                                     email.trim(), pass,
                                     nombre.trim().ifBlank { null },
+                                    distrito.trim().ifBlank { null },
                                     // Van solo los dígitos. El backend los
                                     // canoniza igualmente —les antepone el 51
-                                    // para que coincidan con el número que
-                                    // entrega WhatsApp—, así que esto es por
-                                    // no mandarle espacios que va a tirar.
-                                    digitosTelefono,
-                                    distrito.trim().ifBlank { null },
+                                    // para que el seudónimo coincida con el
+                                    // del número que entrega WhatsApp—, así
+                                    // que esto es por no mandarle espacios
+                                    // que va a tirar de todos modos.
+                                    digitosTelefono.ifBlank { null },
+                                    recibirAlertas,
                                 )
                             } else {
                                 onLogin(email.trim(), pass)
@@ -2273,20 +2355,37 @@ private fun coloresCampoPildora() = OutlinedTextFieldDefaults.colors(
     unfocusedBorderColor = Color.Transparent,
 )
 
+/**
+ * Antes usaba un rosa fijo (`0xFFFFDAD6`) igual en claro y en oscuro. Coincide
+ * con el `errorContainer` por defecto en modo claro, pero en modo oscuro ese
+ * rosa brillante sobre un fondo casi negro deslumbra en vez de avisar. El
+ * color del tema resuelve el contraste correcto en los dos modos (§31.2).
+ */
 @Composable
 private fun AvisoError(texto: String) {
-    Surface(color = Color(0xFFFFDAD6), shape = RoundedCornerShape(6.dp)) {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        shape = RoundedCornerShape(Radios.chip),
+    ) {
         Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Warning, contentDescription = null, tint = Color(0xFF410002))
+            Icon(
+                Icons.Filled.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+            )
             Spacer(Modifier.width(8.dp))
-            Text(texto, color = Color(0xFF410002), style = MaterialTheme.typography.labelMedium)
+            Text(
+                texto,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                style = MaterialTheme.typography.labelMedium,
+            )
         }
     }
 }
 
 @Composable
 private fun BannerSinConexion(sincronizadoAt: String?) {
-    Surface(color = COLOR_SIN_CONEXION, shape = RoundedCornerShape(6.dp)) {
+    Surface(color = COLOR_SIN_CONEXION, shape = RoundedCornerShape(Radios.chip)) {
         Column(Modifier.fillMaxWidth().padding(10.dp)) {
             Text(
                 "MODO SIN CONEXIÓN",
@@ -2598,9 +2697,7 @@ private fun MapaDeReporte(
     Surface(
         shape = RoundedCornerShape(Radios.boton),
         tonalElevation = 1.dp,
-        // El mapa de selección ocupa ahora aproximadamente el 300% del área
-        // anterior para marcar la ubicación con más precisión.
-        modifier = Modifier.fillMaxWidth().height(660.dp),
+        modifier = Modifier.fillMaxWidth().height(ALTURA_MAPA_SELECCION),
     ) {
         GoogleMap(
             modifier = Modifier.fillMaxSize(),

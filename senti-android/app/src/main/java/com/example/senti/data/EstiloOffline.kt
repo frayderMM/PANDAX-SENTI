@@ -31,8 +31,11 @@ import java.io.File
  * no prometerlo: el mapa sin conexión dibuja la **geometría** de las calles y
  * los puntos que importan, y los nombres se leen tocando cada punto.
  *
- * Los colores son planos y de alto contraste a propósito. Esto se mira con una
- * linterna, bajo lluvia y con la pantalla al mínimo para ahorrar batería.
+ * **Fondo claro y vías oscuras.** Es al revés que un mapa nocturno, y la razón
+ * es dónde se usa esto: a la intemperie y de día. Bajo sol directo la pantalla
+ * de un teléfono pierde casi todo el contraste, y un mapa oscuro se convierte
+ * en un rectángulo negro donde no se distingue una calle de un río. Con fondo
+ * claro y trazo oscuro sobrevive al reflejo, que es la condición real de uso.
  */
 object EstiloOffline {
 
@@ -118,16 +121,16 @@ object EstiloOffline {
           "sources": { $fuentes },
           "layers": [
             { "id": "fondo", "type": "background",
-              "paint": { "background-color": "#0F1418" } },
+              "paint": { "background-color": "#EFEBE4" } },
 
             { "id": "tierra", "type": "fill", "source": "$FUENTE_PERU", "source-layer": "earth",
-              "paint": { "fill-color": "#161C21" } },
+              "paint": { "fill-color": "#F7F4EE" } },
 
             { "id": "verde", "type": "fill", "source": "$FUENTE_PERU", "source-layer": "landuse",
-              "paint": { "fill-color": "#17241C" } },
+              "paint": { "fill-color": "#DFE9D6" } },
 
             { "id": "agua", "type": "fill", "source": "$FUENTE_PERU", "source-layer": "water",
-              "paint": { "fill-color": "#0B2B3D" } },
+              "paint": { "fill-color": "#A8CBE0" } },
 
             ${capasVias(FUENTE_PERU, null)}$capasDetalle
           ]
@@ -148,7 +151,7 @@ object EstiloOffline {
               "source-layer": "roads",
               "filter": ["in", "kind", "minor_road", "path"],
               "paint": {
-                "line-color": "#4A5560",
+                "line-color": "#B0A99D",
                 "line-width": ["interpolate", ["linear"], ["zoom"], 12, 0.4, 16, 2.5]
               } },
 
@@ -156,7 +159,7 @@ object EstiloOffline {
               "source-layer": "roads",
               "filter": ["==", "kind", "medium_road"],
               "paint": {
-                "line-color": "#78848F",
+                "line-color": "#8A8175",
                 "line-width": ["interpolate", ["linear"], ["zoom"], 11, 0.7, 16, 4.0]
               } },
 
@@ -164,7 +167,7 @@ object EstiloOffline {
               "source-layer": "roads",
               "filter": ["==", "kind", "major_road"],
               "paint": {
-                "line-color": "#B9C4CE",
+                "line-color": "#55504A",
                 "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.0, 16, 5.5]
               } },
 
@@ -172,7 +175,7 @@ object EstiloOffline {
               "source-layer": "roads",
               "filter": ["==", "kind", "highway"],
               "paint": {
-                "line-color": "#F0C24B",
+                "line-color": "#C2701A",
                 "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1.0, 16, 6.5]
               } }
         """.trimIndent()
