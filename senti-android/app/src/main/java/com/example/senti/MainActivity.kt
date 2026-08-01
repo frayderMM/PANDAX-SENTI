@@ -213,11 +213,26 @@ private fun etiquetaUrgencia(urgencia: String?): String = when (urgencia) {
     else -> ""
 }
 
+/**
+ * Las 12 etiquetas cubren todo `HazardType` del backend (`app/domain.py`), no
+ * solo las cinco que el formulario ofrecía antes. La vigencia de un reporte
+ * depende del tipo (§20.3: un puente afectado dura 7 días, un "otro" solo 12
+ * horas), así que meter un huaico o un incendio bajo "Otro" por no tener su
+ * propio botón no era solo una etiqueta imprecisa: le daba al reporte una
+ * vigencia mucho más corta de la que le corresponde.
+ */
 private fun etiquetaTipoReporte(tipo: String): String = when (tipo) {
     "inundacion" -> "Inundación"
     "huaico" -> "Huaico"
-    "via_bloqueada" -> "Vía bloqueada"
+    "deslizamiento" -> "Deslizamiento"
+    "lluvia" -> "Lluvia intensa"
     "sismo" -> "Sismo"
+    "tsunami" -> "Tsunami"
+    "incendio" -> "Incendio"
+    "via_bloqueada" -> "Vía bloqueada"
+    "puente_afectado" -> "Puente afectado"
+    "acumulacion_agua" -> "Acumulación de agua"
+    "caida_poste" -> "Caída de poste"
     "otro" -> "Otro"
     else -> tipo.replace("_", " ").replaceFirstChar { it.uppercase() }
 }
@@ -1196,19 +1211,33 @@ private fun ListaReportes(
         AlertDialog(
             onDismissRequest = { reporteSeleccionado = null },
             title = { Text(etiquetaTipoReporte(reporte.tipo)) },
+            // El detalle es un superconjunto de lo que ya se ve en la
+            // tarjeta —distrito y fecha incluidos— y no un subconjunto: antes
+            // se perdían al abrir "más información", que es justo al revés
+            // de lo que alguien espera al pedir más detalle.
             text = {
                 Column {
                     Text(etiquetaConfianza(reporte.confianza), color = colorConfianza(reporte.confianza))
                     Spacer(Modifier.height(8.dp))
-                    Text(reporte.descripcion ?: "Sin descripción adicional.")
-                    reporte.direccion?.takeIf { it.isNotBlank() }?.let {
+                    Text(reporte.descripcion?.takeIf { it.isNotBlank() } ?: "Sin descripción adicional.")
+                    val ubicacion = listOfNotNull(
+                        reporte.direccion?.takeIf { it.isNotBlank() },
+                        reporte.distrito?.takeIf { it.isNotBlank() },
+                    ).joinToString(" · ")
+                    if (ubicacion.isNotBlank()) {
                         Spacer(Modifier.height(8.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.Place, contentDescription = "Ubicación", modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text(it)
+                            Text(ubicacion)
                         }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Reportado: ${reporte.reportadoAt.take(16).replace('T', ' ')}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             },
             confirmButton = { TextButton(onClick = { reporteSeleccionado = null }) { Text("Cerrar") } },
@@ -1283,7 +1312,15 @@ private fun TarjetaReporte(
                     Spacer(Modifier.height(9.dp))
                     Text(it, style = MaterialTheme.typography.bodyMedium)
                 }
-                r.direccion?.takeIf { it.isNotBlank() }?.let {
+                // El distrito faltaba en la tarjeta aunque el dato ya viaja en
+                // `ReporteResumen`. Con reportes cargados por radio y no por
+                // distrito, verlo de un vistazo en cada tarjeta evita tener
+                // que abrir el mapa para saber dónde cae cada uno.
+                val ubicacion = listOfNotNull(
+                    r.direccion?.takeIf { it.isNotBlank() },
+                    r.distrito?.takeIf { it.isNotBlank() },
+                ).joinToString(" · ")
+                if (ubicacion.isNotBlank()) {
                     Spacer(Modifier.height(7.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
@@ -1294,7 +1331,7 @@ private fun TarjetaReporte(
                         )
                         Spacer(Modifier.width(5.dp))
                         Text(
-                            it,
+                            ubicacion,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1328,7 +1365,13 @@ private fun FormularioReporte(
     var lon by remember { mutableStateOf("") }
     var fotoBase64 by remember { mutableStateOf<String?>(null) }
     var fotoPreview by remember { mutableStateOf<Bitmap?>(null) }
-    val tipos = listOf("inundacion", "huaico", "via_bloqueada", "sismo", "otro")
+    // Los 12 tipos que reconoce el backend (§20.3), no solo 5: elegir el
+    // correcto no es cosmético, decide cuánto dura vigente el reporte.
+    val tipos = listOf(
+        "inundacion", "huaico", "deslizamiento", "lluvia", "via_bloqueada",
+        "puente_afectado", "acumulacion_agua", "sismo", "tsunami", "incendio",
+        "caida_poste", "otro",
+    )
 
     val selector = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
