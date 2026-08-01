@@ -494,7 +494,7 @@ class Orchestrator:
         if ruteo.intent is router.Intent.TELEFONOS:
             return self._respuesta_telefonos(entrada, datetime.now())
         if ruteo.intent is router.Intent.OFFLINE and re.search(
-            r"\bsin (senal|señal)\b", normalize(entrada.texto)
+            r"\b(?:sin|no tengo) (senal|señal)\b", normalize(entrada.texto)
         ):
             adaptado = light_mode.adaptar(fx.SIN_SENAL, entrada.nivel_operacion)
             return SalidaOrquestador(

@@ -73,3 +73,10 @@ def test_invitado_no_recibe_rag_para_una_herramienta_restringida() -> None:
     assert salida.respuesta_plantilla_fija is True
     assert "Sin sesión iniciada" in salida.texto
     assert "RAG" in (salida.motivo_plantilla or "")
+
+
+def test_no_tengo_senal_usa_instruccion_fija() -> None:
+    salida = _orchestrator().responder(EntradaUsuario(texto="no tengo señal, ¿qué hago?"))
+    assert salida.respuesta_plantilla_fija is True
+    assert "espacio abierto" in salida.texto
+    assert "111" not in salida.texto
