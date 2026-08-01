@@ -181,6 +181,11 @@ vacía basta con estar autenticado.
 `/health/detalle` es la comprobación de despliegue, y cubre las cuatro cosas que
 se caen en silencio:
 
+El acceso del portal municipal (`/login.html`) usa `POST /auth/login`; no simula
+una sesión en el navegador. El backend sigue siendo quien autentica y emite el
+token, y la interfaz solo permite continuar a los roles `operador_municipal` y
+`administrador`.
+
 | Comprueba | Por qué ahí |
 |---|---|
 | PostGIS y pgvector | sin ellos no hay geometría ni RAG, y el error sale tarde |
