@@ -86,7 +86,7 @@ onMounted(cargar);
 <template>
   <div class="panel">
     <header class="barra">
-      <a class="marca" href="/dashboard.html" aria-label="Inicio del panel municipal"><img src="/senti-icono.png" alt="" /><span>SENTI <small>Panel municipal</small></span></a>
+      <a class="marca" href="/info-general.html" aria-label="Inicio de información general"><img src="/senti-icono.png" alt="" /><span>SENTI <small>Información general</small></span></a>
       <div class="acciones"><span class="rol">{{ rol.replaceAll("_", " ") }}</span><button class="salir" type="button" @click="salir">Cerrar sesión</button></div>
     </header>
     <main class="contenido">
