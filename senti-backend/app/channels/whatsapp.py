@@ -48,6 +48,13 @@ def normalizar_numero(numero: str) -> str:
 
     Solo se limpia lo que llega como número suelto, que es lo que escribe un
     humano al configurar algo: `+51 987-654-321` → `51987654321`.
+
+    **Un celular peruano de 9 dígitos que empieza en 9 se asume sin código de
+    país** y se le antepone `51`. Es lo que llega de `AlertSubscriber`: quien
+    se registra escribe "925650163", no "51925650163", y sin este paso
+    Evolution recibe un número de 9 dígitos que no resuelve a ningún JID —
+    falla en silencio para quien lo prueba, porque el envío "funciona" (no
+    lanza error hasta que Evolution responde) pero nunca llega.
     """
     if "@" in numero:
         jid = numero.strip()
@@ -56,6 +63,8 @@ def normalizar_numero(numero: str) -> str:
         return jid
 
     limpio = _SOLO_DIGITOS.sub("", numero)
+    if len(limpio) == 9 and limpio.startswith("9"):
+        limpio = f"51{limpio}"
     if not (_LONGITUD_MINIMA <= len(limpio) <= _LONGITUD_MAXIMA):
         raise ValueError(f"número de WhatsApp no utilizable: {numero!r}")
     return limpio

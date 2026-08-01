@@ -109,6 +109,12 @@ emisión. Todo lo que falte va en `datos_faltantes`.
 `resumen_ciudadano` traduce el documento a lenguaje de a pie, sin cambiar el
 nivel, las zonas ni las fechas. `terminos_tecnicos` explica cada término que un
 ciudadano no tendría por qué conocer.
+
+`recomendaciones` es la lista de acciones concretas que el documento pide
+hacer (una por elemento), casi siempre bajo un título como "Recomendaciones"
+o "Se recomienda". Cópialas tal como aparecen, sin resumirlas ni fusionarlas
+en una sola frase. Si el documento no trae ninguna recomendación explícita,
+la lista queda vacía — no inventes una genérica.
 """
 
 SYSTEM_CATEGORIA_REPORTE = """\
