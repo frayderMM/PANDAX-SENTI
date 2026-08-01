@@ -42,6 +42,7 @@ class Intent(str, enum.Enum):
     OFFLINE = "offline"
     CONTACTO = "contacto"
     WEB = "web"
+    TELEFONOS = "telefonos"
     IMAGEN = "imagen"
     GENERAL = "general"
 
@@ -59,6 +60,7 @@ HERRAMIENTA: dict[Intent, str | None] = {
     Intent.OFFLINE: "guardar_informacion_offline",
     Intent.CONTACTO: "preparar_mensaje_contacto",
     Intent.WEB: "consultar_web_oficial",
+    Intent.TELEFONOS: None,
     Intent.IMAGEN: None,
     Intent.GENERAL: None,
 }
@@ -68,6 +70,13 @@ HERRAMIENTA: dict[Intent, str | None] = {
 # específico a más genérico, porque "¿cómo llego al centro de salud?" es una
 # ruta y no una consulta de recursos, aunque mencione ambos.
 _PATRONES: list[tuple[Intent, str]] = [
+    (
+        Intent.TELEFONOS,
+        r"\b(numeros?|telefonos?|llama(?:r)?|contactar)\b.{0,60}"
+        r"\b(emergencia|bombero|policia|pnp|samu|salud|indeci|defensa civil|"
+        r"sutran|carretera|essalud)\b"
+        r"|\bemergencias?\b.{0,35}\b(numeros?|telefonos?)\b",
+    ),
     (
         Intent.GENERAL,
         # Estar atascado abre el mapa para que la persona señale el bloqueo;

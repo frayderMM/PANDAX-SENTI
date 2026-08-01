@@ -52,6 +52,7 @@ from app.orchestrator.tools import (
 )
 from app.rules import fixed_responses as fx
 from app.rules import light_mode
+from app.rules import phones
 from app.rules.response import (
     LanguageViolation,
     Respuesta,
@@ -346,6 +347,37 @@ class Orchestrator:
             advertencias=adaptado.advertencias or [],
         )
 
+    def _respuesta_telefonos(self, entrada: EntradaUsuario, inicio: datetime) -> SalidaOrquestador:
+        """Responde teléfonos desde la tabla verificada, sin RAG ni modelo."""
+        return SalidaOrquestador(
+            texto=phones.render_consulta(entrada.texto),
+            urgencia=UrgencyLevel.VERDE,
+            respuesta_plantilla_fija=True,
+            motivo_plantilla="consulta de teléfonos verificados (§24.3)",
+            fuentes_citadas=[
+                {
+                    "institucion": "PCM — teléfonos de emergencia",
+                    "url": "https://www.gob.pe/547-telefonos-de-emergencia",
+                    "confianza": "OFICIAL",
+                }
+            ],
+            latencia_ms=(datetime.now() - inicio).total_seconds() * 1000,
+        )
+
+    def _respuesta_sin_sesion(
+        self, entrada: EntradaUsuario, evaluacion: UrgencyAssessment, inicio: datetime
+    ) -> SalidaOrquestador:
+        """No deja que una consulta sin permiso caiga accidentalmente al RAG."""
+        adaptado = light_mode.adaptar(fx.SIN_SESION_PARA_ZONA, entrada.nivel_operacion)
+        return SalidaOrquestador(
+            texto=adaptado.texto,
+            urgencia=evaluacion.nivel,
+            respuesta_plantilla_fija=True,
+            motivo_plantilla="herramienta requiere sesión; se omite RAG (§13.4)",
+            latencia_ms=(datetime.now() - inicio).total_seconds() * 1000,
+            advertencias=adaptado.advertencias or [],
+        )
+
     # ── Camino con modelo ─────────────────────────────────────────────────
     def _respuesta_con_modelo(
         self, evaluacion: UrgencyAssessment, entrada: EntradaUsuario
@@ -435,6 +467,13 @@ class Orchestrator:
         lugar_encontrado: dict[str, Any] | None = None
         lugar_sugerido: dict[str, Any] | None = None
         ruteo = router.rutear(entrada.texto, tiene_imagen=entrada.imagen is not None)
+        if ruteo.intent is router.Intent.TELEFONOS:
+            return self._respuesta_telefonos(entrada, datetime.now())
+        # Recursos y rutas son consultas geográficas: sin sesión no hay dato
+        # que consultar. Otras intenciones (por ejemplo una explicación
+        # general de una alerta) todavía pueden responderse con RAG.
+        if self.ctx.user is None and ruteo.intent in (router.Intent.RECURSOS, router.Intent.RUTA):
+            return self._respuesta_sin_sesion(entrada, evaluacion, datetime.now())
         tools = None
         resultado_verificado: str | None = None
 

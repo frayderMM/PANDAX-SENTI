@@ -66,3 +66,10 @@ def test_amarillo_pasa_por_el_modelo() -> None:
         assert "nivel amarillo" not in motivo
         if salida.respuesta_plantilla_fija:
             assert "modelo no disponible" in motivo or "cola" in motivo
+
+
+def test_invitado_no_recibe_rag_para_una_herramienta_restringida() -> None:
+    salida = _orchestrator().responder(EntradaUsuario(texto="Quiero ir al hospital más cercano"))
+    assert salida.respuesta_plantilla_fija is True
+    assert "Sin sesión iniciada" in salida.texto
+    assert "RAG" in (salida.motivo_plantilla or "")
