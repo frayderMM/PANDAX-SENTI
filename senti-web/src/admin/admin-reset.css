@@ -1,0 +1,39 @@
+/* Reseteo mínimo del panel de operador. Entrada Vite independiente
+   (admin.html): no reutiliza style.css (vista pública, otra paleta) ni
+   login-reset.css (pantalla de un solo bloque, sin scroll interno). */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+h1,
+h2,
+h3,
+p,
+form {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
