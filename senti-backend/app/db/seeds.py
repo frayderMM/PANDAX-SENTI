@@ -327,6 +327,83 @@ def sembrar_demo(session: Session) -> None:
             )
         )
 
+    # Dos alertas más, para que el Dashboard del operador (que muestra las
+    # últimas N) tenga algo real que listar además del aviso de lluvias:
+    # una moderada vigente y una ya resuelta. Sin esto la tarjeta "Últimas
+    # alertas" del panel queda con un solo elemento en cualquier instalación
+    # nueva, que no es representativo de cómo se ve en uso.
+    if not session.scalar(select(Alert).where(Alert.titulo.contains("Vientos fuertes"))):
+        alerta_viento = Alert(
+            tipo_evento=HazardType.LLUVIA,
+            titulo="DEMOSTRACIÓN — Vientos fuertes en zonas altas de Chosica",
+            nivel_oficial="Amarilla",
+            entidad_emisora="SENAMHI",
+            confianza=ConfidenceLevel.OFICIAL,
+            vigencia_inicio=ahora - timedelta(hours=3),
+            vigencia_fin=ahora + timedelta(hours=9),
+            vigente=True,
+            recomendaciones_oficiales=["Asegure techos ligeros y objetos sueltos en azoteas."],
+            actualizado_en_origen=ahora - timedelta(hours=1),
+        )
+        session.add(alerta_viento)
+        session.flush()
+        session.add(
+            AlertZone(
+                alert_id=alerta_viento.id,
+                nombre="Lurigancho-Chosica, zonas altas",
+                distrito="Lurigancho-Chosica",
+                provincia="Lima",
+                departamento="Lima",
+                geom=from_shape(
+                    Polygon([
+                        (CHOSICA_LON - 0.015, CHOSICA_LAT + 0.01),
+                        (CHOSICA_LON + 0.015, CHOSICA_LAT + 0.01),
+                        (CHOSICA_LON + 0.015, CHOSICA_LAT + 0.03),
+                        (CHOSICA_LON - 0.015, CHOSICA_LAT + 0.03),
+                        (CHOSICA_LON - 0.015, CHOSICA_LAT + 0.01),
+                    ]),
+                    srid=SRID,
+                ),
+            )
+        )
+
+    if not session.scalar(select(Alert).where(Alert.titulo.contains("Condiciones estables"))):
+        alerta_estable = Alert(
+            tipo_evento=HazardType.LLUVIA,
+            titulo="DEMOSTRACIÓN — Condiciones estables tras el paso de las lluvias",
+            nivel_oficial="Verde",
+            entidad_emisora="Municipalidad de Lurigancho-Chosica",
+            confianza=ConfidenceLevel.MUNICIPAL,
+            vigencia_inicio=ahora - timedelta(days=1, hours=5),
+            vigencia_fin=ahora - timedelta(hours=6),
+            # Ya pasó: queda en el historial de "últimas alertas" pero no
+            # cuenta como activa.
+            vigente=False,
+            actualizado_en_origen=ahora - timedelta(hours=6),
+        )
+        session.add(alerta_estable)
+        session.flush()
+        d_estable = 0.03
+        session.add(
+            AlertZone(
+                alert_id=alerta_estable.id,
+                nombre="Lurigancho-Chosica",
+                distrito="Lurigancho-Chosica",
+                provincia="Lima",
+                departamento="Lima",
+                geom=from_shape(
+                    Polygon([
+                        (CHOSICA_LON - d_estable, CHOSICA_LAT - d_estable),
+                        (CHOSICA_LON + d_estable, CHOSICA_LAT - d_estable),
+                        (CHOSICA_LON + d_estable, CHOSICA_LAT + d_estable),
+                        (CHOSICA_LON - d_estable, CHOSICA_LAT + d_estable),
+                        (CHOSICA_LON - d_estable, CHOSICA_LAT - d_estable),
+                    ]),
+                    srid=SRID,
+                ),
+            )
+        )
+
     # §34.3: dos destinos validados por el municipio.
     if not session.scalar(select(Resource).where(Resource.nombre.contains("DEMOSTRACIÓN"))):
         session.add_all([
@@ -377,6 +454,69 @@ def sembrar_demo(session: Session) -> None:
                 distrito="Lurigancho-Chosica",
                 reportado_at=ahora - timedelta(minutes=20),
                 vence_at=ahora + timedelta(hours=11, minutes=40),
+                exif_eliminado=True,
+            )
+        )
+
+    # Tres reportes más, con el mismo motivo que las alertas adicionales de
+    # arriba: el Dashboard del operador lista los últimos N reportes, y con
+    # solo uno la tarjeta "Incidencias recientes" no muestra nada de la
+    # variedad de tipos y estados que existen de verdad.
+    if not session.scalar(
+        select(CitizenReport).where(CitizenReport.direccion_aproximada.contains("Jr. Los Sauces"))
+    ):
+        session.add(
+            CitizenReport(
+                reporter_id=validador.id,
+                tipo=HazardType.ACUMULACION_AGUA,
+                estado=ReportState.RESUELTO,
+                trust_level=TrustLevel.VALIDADO,
+                descripcion="Agua empozada en cruce de calles, ya drenó tras la lluvia.",
+                geom=from_shape(Point(CHOSICA_LON - 0.005, CHOSICA_LAT - 0.003), srid=SRID),
+                direccion_aproximada="DEMOSTRACIÓN — Jr. Los Sauces, cruce con Av. Central",
+                distrito="Lurigancho-Chosica",
+                reportado_at=ahora - timedelta(hours=2, minutes=10),
+                resuelto_at=ahora - timedelta(minutes=40),
+                vence_at=ahora + timedelta(hours=5, minutes=50),
+                exif_eliminado=True,
+            )
+        )
+
+    if not session.scalar(
+        select(CitizenReport).where(CitizenReport.direccion_aproximada.contains("Av. Las Torres"))
+    ):
+        session.add(
+            CitizenReport(
+                reporter_id=rosa.id,
+                tipo=HazardType.VIA_BLOQUEADA,
+                estado=ReportState.EN_REVISION,
+                trust_level=TrustLevel.PROBABLE,
+                descripcion="Material de deslizamiento menor cubre un carril.",
+                geom=from_shape(Point(CHOSICA_LON + 0.006, CHOSICA_LAT - 0.004), srid=SRID),
+                direccion_aproximada="DEMOSTRACIÓN — Av. Las Torres, altura del km 3",
+                distrito="Lurigancho-Chosica",
+                reportado_at=ahora - timedelta(minutes=55),
+                vence_at=ahora + timedelta(hours=23),
+                exif_eliminado=True,
+            )
+        )
+
+    if not session.scalar(
+        select(CitizenReport).where(CitizenReport.direccion_aproximada.contains("Calle Real"))
+    ):
+        session.add(
+            CitizenReport(
+                reporter_id=operador.id,
+                tipo=HazardType.DESLIZAMIENTO,
+                estado=ReportState.RESUELTO,
+                trust_level=TrustLevel.CONFIRMADO,
+                descripcion="Talud estabilizado por personal municipal tras inspección.",
+                geom=from_shape(Point(CHOSICA_LON - 0.009, CHOSICA_LAT + 0.007), srid=SRID),
+                direccion_aproximada="DEMOSTRACIÓN — Calle Real, sector Gaviotas",
+                distrito="Lurigancho-Chosica",
+                reportado_at=ahora - timedelta(hours=5),
+                resuelto_at=ahora - timedelta(hours=1),
+                vence_at=ahora + timedelta(hours=43),
                 exif_eliminado=True,
             )
         )
