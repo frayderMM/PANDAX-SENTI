@@ -123,7 +123,8 @@ _PATRONES: list[tuple[Intent, str]] = [
         # Sin `\b` final tras los verbos: son raíces, y "bloqueada" o
         # "cerradas" continúan con más letras. Un `\b` ahí no casa nunca.
         r"\bcomo esta (la|el)\b.{0,25}\b(via|avenida|calle|carretera|puente|pista)\b"
-        r"|\b(via|avenida|calle|carretera|puente)\b.{0,20}\b(bloquead|cerrad|inundad|transitable)"
+        r"|\b(via|avenida|calle|carretera|puente|pista)\b.{0,30}\b(bloquead|cerrad|inundad|transitable|derrumbe|deslizamiento)"
+        r"|\b(derrumbe|deslizamiento|huaico)\b.{0,30}\b(via|avenida|calle|carretera|puente|pista)\b"
         r"|\bse puede pasar\b|\bhay reportes?\b|\besta abierta\b",
     ),
     (
@@ -138,7 +139,8 @@ _PATRONES: list[tuple[Intent, str]] = [
     ),
     (
         Intent.OFFLINE,
-        r"\bsin (conexion|internet|señal|senal|datos)\b|\bdescargar\b|\bguardar para\b"
+        r"\bsin (conexion|internet|señal|senal|datos)\b|\bno tengo (señal|senal|internet|conexion)\b"
+        r"|\bdescargar\b|\bguardar para\b"
         r"|\boffline\b|\bme quedo sin\b",
     ),
     (

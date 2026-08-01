@@ -115,6 +115,10 @@ class TestArgumentos:
     def test_consulta_telefono_acepta_plural_cotidiano(self) -> None:
         assert rutear("¿cuál es el número de bomberos?").intent is Intent.TELEFONOS
 
+    def test_variantes_viales_y_sin_senal_se_rutean(self) -> None:
+        assert rutear("la pista está bloqueada por un derrumbe").intent is Intent.REPORTE
+        assert rutear("no tengo señal, ¿qué hago?").intent is Intent.OFFLINE
+
     def test_reporte_extrae_la_via(self) -> None:
         a = argumentos_por_defecto(Intent.REPORTE, texto="¿la avenida Central está bloqueada?")
         assert "central" in a["via"].lower()
