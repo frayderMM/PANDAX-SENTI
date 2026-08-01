@@ -1,0 +1,200 @@
+{
+  "version": "1.0",
+  "compilado_at": "2026-08-01",
+  "vigencia_meses": 12,
+  "nota_origen": "Estas guías viajan dentro de la app y no se descargan. Ninguna la redacta el modelo: las de origen 'protocolo' reproducen literalmente el protocolo versionado del sistema, las de origen 'texto_fijo' reproducen un texto fijo del sistema, y las de origen 'resumen_local' resumen la recomendación pública de la institución citada.",
+  "guias": [
+    {
+      "id": "primeros_pasos",
+      "titulo": "Primeros pasos ante una emergencia",
+      "institucion": "INDECI",
+      "fuente": "https://www.gob.pe/indeci",
+      "version": "1.0",
+      "origen": "resumen_local",
+      "orden": 1,
+      "resumen": "Lo que se hace en el primer minuto, antes de tener información.",
+      "acciones": [
+        { "texto": "Ponte a salvo antes de avisar a nadie. Primero tú, después el aviso.", "critica": true },
+        { "texto": "Aléjate de lo que puede caerte encima: muros, postes, cables, ventanas y taludes.", "critica": true },
+        { "texto": "Si hay heridos graves, llama al 106 (SAMU) o al 116 (Bomberos).", "critica": true },
+        { "texto": "Corta el gas y la electricidad si hueles gas o hay agua entrando.", "critica": true },
+        { "texto": "Escucha la radio o el altavoz de las autoridades. No sigas cadenas de mensajes.", "critica": false },
+        { "texto": "Avisa por mensaje de texto, no por llamada: la red de voz se satura antes.", "critica": false }
+      ]
+    },
+    {
+      "id": "mochila",
+      "titulo": "Mochila de emergencia",
+      "institucion": "INDECI",
+      "fuente": "https://www.gob.pe/indeci",
+      "version": "1.0",
+      "origen": "resumen_local",
+      "orden": 2,
+      "resumen": "Se prepara antes, no durante. Debe poder cargarla una sola persona.",
+      "acciones": [
+        { "texto": "Agua: 1 litro por persona y por día, para tres días.", "critica": true },
+        { "texto": "Alimento que no necesite cocción ni refrigeración, para tres días.", "critica": true },
+        { "texto": "Copia de los documentos (DNI, seguro, propiedad) en bolsa impermeable.", "critica": true },
+        { "texto": "Botiquín y los medicamentos habituales de cada integrante, con su receta.", "critica": true },
+        { "texto": "Linterna y radio a pilas, con pilas de repuesto aparte.", "critica": true },
+        { "texto": "Cargador y batería externa cargada.", "critica": true },
+        { "texto": "Silbato: se oye mucho más lejos que un grito y no cansa.", "critica": true },
+        { "texto": "Abrigo, ropa de cambio y calzado cerrado.", "critica": false },
+        { "texto": "Dinero en efectivo en billetes pequeños: sin luz no hay POS ni cajeros.", "critica": false },
+        { "texto": "Agua y alimento para la mascota, y su correa.", "critica": false },
+        { "texto": "Revísala cada seis meses y cambia agua, alimento y pilas.", "critica": false }
+      ]
+    },
+    {
+      "id": "inundacion",
+      "titulo": "Inundación",
+      "institucion": "INDECI",
+      "fuente": "Protocolo INUNDACION-2H, versión 1.0",
+      "version": "1.0",
+      "origen": "protocolo",
+      "orden": 3,
+      "resumen": "Plan para las próximas dos horas ante lluvias e inundación.",
+      "acciones": [
+        { "texto": "Guardar documentos en una bolsa impermeable", "critica": true },
+        { "texto": "Preparar medicamentos habituales", "critica": true },
+        { "texto": "Cargar los celulares", "critica": true },
+        { "texto": "Confirmar el punto de reunión", "critica": true },
+        { "texto": "Preparar agua y alimento para la mascota", "critica": false },
+        { "texto": "Descargar la ruta de menor riesgo", "critica": true },
+        { "texto": "Ubicar la silla de ruedas o el apoyo de marcha junto a la salida", "critica": true },
+        { "texto": "Acordar quién acompaña a la persona adulta mayor", "critica": true },
+        { "texto": "No cruces agua en movimiento: 30 cm bastan para tumbarte y 60 cm para arrastrar un auto.", "critica": true },
+        { "texto": "No camines por agua estancada si hay cables caídos cerca.", "critica": true }
+      ]
+    },
+    {
+      "id": "huaico",
+      "titulo": "Huaico o activación de quebrada",
+      "institucion": "INDECI",
+      "fuente": "Protocolo HUAICO-2H, versión 1.0",
+      "version": "1.0",
+      "origen": "protocolo",
+      "orden": 4,
+      "resumen": "Plan ante activación de quebrada o huaico.",
+      "acciones": [
+        { "texto": "Aléjate del cauce de la quebrada, hacia terreno alto", "critica": true },
+        { "texto": "No intentes cruzar el material del huaico", "critica": true },
+        { "texto": "Guardar documentos y medicinas", "critica": true },
+        { "texto": "Confirmar el punto de reunión", "critica": true },
+        { "texto": "Un ruido sordo creciente que viene de la quebrada es motivo para salir ya, sin comprobar nada.", "critica": true },
+        { "texto": "Sube en perpendicular al cauce, no corras cauce abajo por delante del material.", "critica": true }
+      ]
+    },
+    {
+      "id": "derrumbe",
+      "titulo": "Derrumbe y vía bloqueada",
+      "institucion": "INDECI",
+      "fuente": "https://www.gob.pe/indeci",
+      "version": "1.0",
+      "origen": "resumen_local",
+      "orden": 5,
+      "resumen": "Un talud que ya cayó una vez vuelve a caer. No es un obstáculo que se rodea a pie.",
+      "acciones": [
+        { "texto": "No intentes cruzar el bloqueo, ni a pie ni en vehículo.", "critica": true },
+        { "texto": "Aléjate del borde de la vía y del pie del talud.", "critica": true },
+        { "texto": "Avisa: 110 Policía de Carreteras, 0800-12345 Aló SUTRAN, 115 Defensa Civil.", "critica": true },
+        { "texto": "Si hay piedras sueltas cayendo, el derrumbe no ha terminado: no te detengas debajo.", "critica": true },
+        { "texto": "Enciende las luces de emergencia y señaliza detrás del vehículo si estás en carretera.", "critica": false },
+        { "texto": "Espera la ruta alterna oficial antes de buscar un desvío por tu cuenta.", "critica": false }
+      ]
+    },
+    {
+      "id": "incendio",
+      "titulo": "Incendio",
+      "institucion": "Cuerpo General de Bomberos Voluntarios del Perú",
+      "fuente": "https://www.gob.pe/cgbvp",
+      "version": "1.0",
+      "origen": "resumen_local",
+      "orden": 6,
+      "resumen": "El humo mata antes que el fuego. Salir es la prioridad; apagar, no.",
+      "acciones": [
+        { "texto": "Sal de inmediato y llama al 116 desde fuera. No vuelvas a entrar por nada.", "critica": true },
+        { "texto": "Agáchate: el aire respirable está cerca del suelo.", "critica": true },
+        { "texto": "Antes de abrir una puerta, tócala con el dorso de la mano. Si quema, no la abras.", "critica": true },
+        { "texto": "Cubre nariz y boca con una tela, mojada si puedes.", "critica": true },
+        { "texto": "No uses el ascensor.", "critica": true },
+        { "texto": "Si se te prende la ropa: detente, tírate al suelo y rueda.", "critica": true },
+        { "texto": "Si no puedes salir, tapa las rendijas de la puerta con ropa y hazte ver por la ventana.", "critica": true }
+      ]
+    },
+    {
+      "id": "evacuacion",
+      "titulo": "Evacuación",
+      "institucion": "INDECI",
+      "fuente": "https://www.gob.pe/indeci",
+      "version": "1.0",
+      "origen": "resumen_local",
+      "orden": 7,
+      "resumen": "Se evacúa cuando lo ordena la autoridad, o antes si tu vida corre peligro ahora.",
+      "acciones": [
+        { "texto": "Lleva la mochila de emergencia y nada más. Volver por algo cuesta vidas.", "critica": true },
+        { "texto": "Sigue la ruta señalizada por la autoridad, aunque sea más larga.", "critica": true },
+        { "texto": "Evacúa a pie si la vía está congestionada o inundada.", "critica": true },
+        { "texto": "Acompaña a quien no puede salir solo: niños, adultos mayores, personas con discapacidad.", "critica": true },
+        { "texto": "Corta gas, luz y agua antes de salir si te da tiempo sin riesgo.", "critica": false },
+        { "texto": "Avisa a tu contacto de confianza a qué punto de reunión vas.", "critica": false },
+        { "texto": "No regreses hasta que la autoridad lo autorice.", "critica": true }
+      ]
+    },
+    {
+      "id": "punto_reunion",
+      "titulo": "Punto de reunión familiar",
+      "institucion": "INDECI",
+      "fuente": "https://www.gob.pe/indeci",
+      "version": "1.0",
+      "origen": "resumen_local",
+      "orden": 8,
+      "resumen": "Se acuerda antes. Durante la emergencia no habrá señal para acordarlo.",
+      "acciones": [
+        { "texto": "Elige dos puntos: uno cerca de casa y otro fuera del barrio, por si no puedes volver.", "critica": true },
+        { "texto": "Que sea un lugar abierto, alto y lejos de cauces, taludes y muros altos.", "critica": true },
+        { "texto": "Que lo sepan todos, incluidos los niños, y que sepan llegar a pie.", "critica": true },
+        { "texto": "Acuerda cuánto tiempo se espera en el punto antes de pasar al segundo.", "critica": true },
+        { "texto": "Anota un contacto fuera de la ciudad: cuando la red local cae, la de larga distancia a veces sigue.", "critica": false },
+        { "texto": "Lleva el punto de reunión escrito en papel en la mochila. El celular puede no encender.", "critica": false }
+      ]
+    },
+    {
+      "id": "sin_senal",
+      "titulo": "Falta de señal",
+      "institucion": "SENTI",
+      "fuente": "Texto fijo del sistema (§7.5)",
+      "version": "1.0",
+      "origen": "texto_fijo",
+      "orden": 9,
+      "resumen": "Qué hacer cuando el teléfono se queda sin cobertura.",
+      "acciones": [
+        { "texto": "Sal a un espacio abierto con vista al cielo.", "critica": true },
+        { "texto": "Activa roaming y VoLTE.", "critica": true },
+        { "texto": "Espera. Si tu equipo y tu plan lo permiten, el celular puede conectarse por satélite y aparecerá el nombre del operador con un ícono de satélite.", "critica": true },
+        { "texto": "Cuando aparezca señal, envía por WhatsApp texto corto primero y foto después.", "critica": true },
+        { "texto": "Que no haya señal no significa que no haya peligro: significa que no tienes el dato.", "critica": true }
+      ]
+    },
+    {
+      "id": "telefonos",
+      "titulo": "Teléfonos de emergencia",
+      "institucion": "PCM",
+      "fuente": "https://www.gob.pe/547-telefonos-de-emergencia",
+      "version": "1.0",
+      "origen": "texto_fijo",
+      "orden": 10,
+      "resumen": "Directorio nacional. Funcionan sin saldo y sin datos.",
+      "acciones": [
+        { "texto": "115 · Defensa Civil (INDECI)", "critica": true },
+        { "texto": "116 · Bomberos, rescate y materiales peligrosos", "critica": true },
+        { "texto": "106 · Emergencia médica (SAMU)", "critica": true },
+        { "texto": "105 · Policía (PNP)", "critica": true },
+        { "texto": "110 · Emergencia en carretera (Policía de Carreteras)", "critica": true },
+        { "texto": "0800-12345 · Bloqueo, vía inundada y socorro vial (Aló SUTRAN)", "critica": true },
+        { "texto": "117 · Asegurados EsSalud", "critica": false },
+        { "texto": "911 · Número único, en fase de pruebas en Lima Metropolitana y Callao", "critica": false }
+      ]
+    }
+  ]
+}

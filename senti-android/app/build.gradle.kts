@@ -36,6 +36,15 @@ android {
             rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use(::load)
         }.getProperty("MAPS_API_KEY", "")
         manifestPlaceholders["mapsApiKey"] = claveMapas
+
+        ndk {
+            // MapLibre trae su motor de render como librería nativa, y una por
+            // arquitectura: las cuatro suman unos 48 MB de APK. Se dejan las
+            // dos de ARM —que es el parque real de teléfonos— y x86_64 para
+            // poder probar en emulador. Se cae `x86`, que hoy no lo usa ni un
+            // emulador reciente.
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
     }
 
     buildTypes {
@@ -51,6 +60,18 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+
+    androidResources {
+        // El pack de teselas NO se comprime al empaquetarlo.
+        //
+        // Un PMTiles ya lleva cada tesela comprimida por dentro, así que
+        // volver a comprimirlo no ahorra nada y sí impide lo único que
+        // importa: leerlo por trozos. MapLibre pide rangos de bytes sueltos
+        // del archivo —esa es toda la gracia del formato— y de un asset
+        // comprimido no se puede leer por el medio, hay que descomprimirlo
+        // entero primero.
+        noCompress += "pmtiles"
     }
 }
 
@@ -76,6 +97,10 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.maps.compose)
     implementation(libs.play.services.maps)
+    // Mapa sin conexión (§26). Google dibuja cuando hay red; MapLibre cuando
+    // no la hay, porque es el único de los dos que sabe leer teselas de un
+    // archivo local.
+    implementation(libs.maplibre.android)
 
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))

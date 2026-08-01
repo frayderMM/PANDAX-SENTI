@@ -136,7 +136,16 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.ui.layout.ContentScale
 import com.example.senti.ui.Mensaje
 import com.example.senti.R
+import com.example.senti.data.MarcadorMapa
+import com.example.senti.data.SesionLocal
+import com.example.senti.data.TipoDesastre
+import com.example.senti.data.aMarcador
+import com.example.senti.data.formatearFechaHora
+import com.example.senti.data.tiposPresentes
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.example.senti.ui.MapaRuta
+import com.example.senti.ui.ModoOfflineViewModel
+import com.example.senti.ui.PantallaOffline
 import com.example.senti.ui.SentiViewModel
 import com.example.senti.ui.theme.SENTITheme
 import java.io.ByteArrayOutputStream
@@ -214,29 +223,9 @@ private fun etiquetaUrgencia(urgencia: String?): String = when (urgencia) {
     else -> ""
 }
 
-/**
- * Las 12 etiquetas cubren todo `HazardType` del backend (`app/domain.py`), no
- * solo las cinco que el formulario ofrecía antes. La vigencia de un reporte
- * depende del tipo (§20.3: un puente afectado dura 7 días, un "otro" solo 12
- * horas), así que meter un huaico o un incendio bajo "Otro" por no tener su
- * propio botón no era solo una etiqueta imprecisa: le daba al reporte una
- * vigencia mucho más corta de la que le corresponde.
- */
-private fun etiquetaTipoReporte(tipo: String): String = when (tipo) {
-    "inundacion" -> "Inundación"
-    "huaico" -> "Huaico"
-    "deslizamiento" -> "Deslizamiento"
-    "lluvia" -> "Lluvia intensa"
-    "sismo" -> "Sismo"
-    "tsunami" -> "Tsunami"
-    "incendio" -> "Incendio"
-    "via_bloqueada" -> "Vía bloqueada"
-    "puente_afectado" -> "Puente afectado"
-    "acumulacion_agua" -> "Acumulación de agua"
-    "caida_poste" -> "Caída de poste"
-    "otro" -> "Otro"
-    else -> tipo.replace("_", " ").replaceFirstChar { it.uppercase() }
-}
+// Las etiquetas de tipo viven ahora en `TipoDesastre`, que además lleva el
+// color que usan el filtro y los marcadores del mapa. Había dos tablas y no
+// coincidían.
 
 private data class ImagenPreparada(val base64: String)
 
@@ -272,9 +261,41 @@ private fun decodificarImagen(context: Context, uri: Uri, maxDimension: Int): Bi
 @Composable
 fun PantallaSenti(modifier: Modifier = Modifier) {
     val vm: SentiViewModel = viewModel()
+    val offlineVm: ModoOfflineViewModel = viewModel()
     val estado by vm.estado.collectAsStateWithLifecycle()
+    val offline by offlineVm.estado.collectAsStateWithLifecycle()
+
+    // El modo sin conexión ocupa la app ENTERA y sale antes que cualquier otra
+    // cosa. No es una pestaña más ni una capa encima del resto: mientras está
+    // puesto no hay chat, ni reportes, ni perfil, ni barra inferior, porque
+    // ninguno de los tres puede funcionar sin servidor (§26).
+    if (offline.activo) {
+        BackHandler { offlineVm.salir() }
+        PantallaOffline(
+            paquete = offline.paquete,
+            motivoSinPaquete = offline.motivoSinPaquete,
+            guias = offline.guias,
+            packs = offline.packs,
+            miUbicacion = estado.lat?.let { la ->
+                estado.lon?.let { lo -> com.example.senti.data.Punto(la, lo) }
+            },
+            sincronizando = offline.sincronizando,
+            hayRed = offline.hayRed,
+            preparado = offline.preparado,
+            avisoSync = offline.avisoSync,
+            onSincronizar = { offlineVm.sincronizar(estado.lat, estado.lon) },
+            onSalir = { offlineVm.salir() },
+            modifier = modifier,
+        )
+        return
+    }
 
     if (!estado.autenticado) {
+        // El estado de la red se relee al llegar aquí: si alguien activó el
+        // modo avión con la app abierta, el valor leído al arrancar ya no
+        // vale y de él depende el aviso que se muestra abajo.
+        LaunchedEffect(Unit) { offlineVm.refrescarRed() }
+
         PantallaAcceso(
             modifier = modifier,
             autenticando = estado.autenticando,
@@ -283,11 +304,17 @@ fun PantallaSenti(modifier: Modifier = Modifier) {
             onRegistro = { email, pass, nombre, distrito, telefono, recibirAlertas ->
                 vm.registrar(email, pass, nombre, distrito, telefono, recibirAlertas)
             },
+            // Solo se ofrece si hubo un login online de verdad en este
+            // teléfono. Sin eso no hay nada que recuperar y el botón sería
+            // una promesa vacía (§26).
+            sesionGuardada = offline.sesion,
+            hayRed = offline.hayRed,
+            onEntrarSinConexion = { offlineVm.entrar() },
         )
         return
     }
 
-    PantallaPrincipal(modifier, vm, estado)
+    PantallaPrincipal(modifier, vm, estado, onModoSinConexion = { offlineVm.entrar() })
 }
 
 @Composable
@@ -295,6 +322,7 @@ private fun PantallaPrincipal(
     modifier: Modifier = Modifier,
     vm: SentiViewModel,
     estado: com.example.senti.ui.SentiUiState,
+    onModoSinConexion: () -> Unit,
 ) {
     var seccion by remember { mutableStateOf(SeccionPrincipal.CHAT) }
 
@@ -359,9 +387,15 @@ private fun PantallaPrincipal(
                 estado,
                 onCrearReporte = vm::crearReporte,
                 onCargarReportes = vm::cargarReportes,
+                onModoSinConexion = onModoSinConexion,
             )
-            SeccionPrincipal.PERFIL -> PantallaPerfil(soloAbajo, estado)
-            SeccionPrincipal.CHAT -> PantallaChat(soloAbajo, vm, estado)
+            SeccionPrincipal.PERFIL -> PantallaPerfil(
+                soloAbajo,
+                estado,
+                onModoSinConexion = onModoSinConexion,
+                onCerrarSesion = vm::cerrarSesion,
+            )
+            SeccionPrincipal.CHAT -> PantallaChat(soloAbajo, vm, estado, onModoSinConexion)
         }
     }
 
@@ -453,6 +487,16 @@ private fun RowScope.PestanaSenti(
 private fun EncabezadoSenti(
     titulo: String,
     subtitulo: String? = null,
+    /**
+     * Acceso al modo sin conexión, presente en TODAS las pantallas.
+     *
+     * Vive en la cabecera y no dentro de una sección por una razón concreta:
+     * quien lo necesita está a punto de quedarse sin cobertura, o ya se quedó,
+     * y entonces cada toque de más es tiempo. Estuvo dentro del perfil —dos
+     * toques y saber que había que buscarlo ahí— y eso es esconder la salida
+     * de emergencia en un cajón.
+     */
+    onModoSinConexion: (() -> Unit)? = null,
     accion: (@Composable () -> Unit)? = null,
 ) {
     Surface(
@@ -515,6 +559,15 @@ private fun EncabezadoSenti(
                     }
                 }
                 accion?.invoke()
+                onModoSinConexion?.let { abrir ->
+                    IconButton(onClick = abrir, modifier = Modifier.size(42.dp)) {
+                        Icon(
+                            Icons.Filled.Map,
+                            contentDescription = "Mapa sin conexión",
+                            tint = Color.White,
+                        )
+                    }
+                }
             }
         }
     }
@@ -573,6 +626,7 @@ private fun PantallaChat(
     modifier: Modifier = Modifier,
     vm: SentiViewModel,
     estado: com.example.senti.ui.SentiUiState,
+    onModoSinConexion: () -> Unit,
 ) {
     var entrada by remember { mutableStateOf("") }
     var imagenSeleccionada by remember { mutableStateOf<Uri?>(null) }
@@ -634,6 +688,7 @@ private fun PantallaChat(
         EncabezadoSenti(
             titulo = "SENTI",
             subtitulo = "Asistencia ante emergencias",
+            onModoSinConexion = onModoSinConexion,
             accion = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
@@ -1005,6 +1060,7 @@ private fun PantallaReportes(
         fotoBase64: String?,
     ) -> Unit,
     onCargarReportes: (Double?, Double?) -> Unit,
+    onModoSinConexion: () -> Unit,
 ) {
     var creando by remember { mutableStateOf(false) }
 
@@ -1024,6 +1080,7 @@ private fun PantallaReportes(
             } else {
                 "Un reporte ciudadano no es información oficial hasta validarse."
             },
+            onModoSinConexion = onModoSinConexion,
         )
 
         Box(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
@@ -1063,13 +1120,52 @@ private fun ReportesMapa(
     LaunchedEffect(Unit) {
         runCatching { eventos = com.example.senti.data.Api.listarEventos().events }
     }
-    val ubicados = reportes.filter { it.lat != null && it.lon != null }
-    val eventosUbicados = eventos.filter { it.lat != null && it.lon != null }
-    val centro = eventosUbicados.firstOrNull()?.let { LatLng(it.lat!!, it.lon!!) }
-        ?: ubicados.firstOrNull()?.let { LatLng(it.lat!!, it.lon!!) }
+
+    // Eventos agregados y reportes ciudadanos se unifican para pintarlos, pero
+    // cada marcador conserva de dónde vino: la ficha lo dice y el §25 prohíbe
+    // presentarlos como lo mismo.
+    val marcadores = remember(reportes, eventos) {
+        eventos.mapNotNull { it.aMarcador() } + reportes.mapNotNull { it.aMarcador() }
+    }
+    val tipos = remember(marcadores) { marcadores.tiposPresentes() }
+
+    // Vacío significa "todos". Es distinto de "ninguno seleccionado": un filtro
+    // que empieza sin nada marcado enseñaría un mapa en blanco al abrir.
+    var tiposActivos by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var seleccion by remember { mutableStateOf<MarcadorMapa?>(null) }
+
+    val visibles = remember(marcadores, tiposActivos) {
+        if (tiposActivos.isEmpty()) marcadores else marcadores.filter { it.tipo in tiposActivos }
+    }
+
+    // Si el filtro deja fuera lo que había abierto, la ficha se cierra sola:
+    // dejarla mostraría el detalle de un punto que ya no está en el mapa.
+    LaunchedEffect(visibles) {
+        if (seleccion != null && visibles.none { it.id == seleccion!!.id }) seleccion = null
+    }
+
+    val centro = marcadores.firstOrNull()?.let { LatLng(it.lat, it.lon) }
+        ?: miLat?.let { la -> miLon?.let { lo -> LatLng(la, lo) } }
         ?: LatLng(-12.05, -77.04)
     val camara = rememberCameraPositionState {
-            position = CameraPosition.fromLatLngZoom(centro, if (eventosUbicados.isEmpty() && ubicados.isEmpty()) 12f else 6f)
+        position = CameraPosition.fromLatLngZoom(centro, if (marcadores.isEmpty()) 12f else 6f)
+    }
+
+    if (tipos.isNotEmpty()) {
+        FiltroTipos(
+            tipos = tipos,
+            activos = tiposActivos,
+            total = marcadores.size,
+            onAlternar = { codigo ->
+                tiposActivos = if (codigo in tiposActivos) {
+                    tiposActivos - codigo
+                } else {
+                    tiposActivos + codigo
+                }
+            },
+            onTodos = { tiposActivos = emptySet() },
+        )
+        Spacer(Modifier.height(10.dp))
     }
 
     Surface(
@@ -1077,36 +1173,235 @@ private fun ReportesMapa(
         shape = RoundedCornerShape(Radios.tarjetaGrande),
         shadowElevation = 3.dp,
     ) {
-        GoogleMap(
-            modifier = Modifier.fillMaxSize(),
-            cameraPositionState = camara,
-            uiSettings = MapUiSettings(
-                zoomControlsEnabled = false,
-                mapToolbarEnabled = false,
-            ),
+        Box {
+            GoogleMap(
+                modifier = Modifier.fillMaxSize(),
+                cameraPositionState = camara,
+                uiSettings = MapUiSettings(
+                    zoomControlsEnabled = false,
+                    mapToolbarEnabled = false,
+                ),
+                // Tocar el mapa fuera de un marcador cierra la ficha. No crea
+                // nada: publicar un reporte exige el formulario y su botón.
+                onMapClick = { seleccion = null },
+            ) {
+                if (miLat != null && miLon != null) {
+                    Marker(
+                        state = MarkerState(LatLng(miLat, miLon)),
+                        title = "Mi ubicación",
+                        snippet = "Tu ubicación actual",
+                        icon = BitmapDescriptorFactory.defaultMarker(
+                            BitmapDescriptorFactory.HUE_AZURE
+                        ),
+                    )
+                }
+                visibles.forEach { m ->
+                    Marker(
+                        state = MarkerState(LatLng(m.lat, m.lon)),
+                        title = m.titulo,
+                        snippet = m.etiquetaTipo,
+                        icon = BitmapDescriptorFactory.defaultMarker(matizDe(m.color)),
+                        onClick = {
+                            seleccion = m
+                            // Se consume el toque para que no salga además la
+                            // burbuja diminuta de Google: la ficha de abajo
+                            // dice lo mismo y cabe entera.
+                            true
+                        },
+                    )
+                }
+            }
+
+            seleccion?.let { m ->
+                FichaMarcador(
+                    marcador = m,
+                    onCerrar = { seleccion = null },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(12.dp),
+                )
+            }
+
+            if (visibles.isEmpty() && marcadores.isNotEmpty()) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                    shape = RoundedCornerShape(Radios.tarjeta),
+                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                ) {
+                    Text(
+                        "Ningún evento de ese tipo en tu zona. Que no aparezca no " +
+                            "significa que no exista: solo que no hay ninguno " +
+                            "registrado con esa clasificación.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(14.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Convierte el color del tipo al matiz que acepta el marcador de Google.
+ *
+ * `BitmapDescriptorFactory` solo admite un matiz de 0 a 360, no un color
+ * completo, así que se pasa el color a HSV y se toma la componente H. Se pierde
+ * saturación y brillo; el tono, que es lo que distingue un tipo de otro de un
+ * vistazo, se conserva.
+ */
+private fun matizDe(argb: Long): Float {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(argb.toInt(), hsv)
+    return hsv[0]
+}
+
+/**
+ * Filtro por tipo de desastre.
+ *
+ * Solo ofrece los tipos que hay en el mapa y enseña cuántos de cada uno. Un
+ * chip que al pulsarlo deja la pantalla vacía no es un filtro, es una pregunta
+ * sin respuesta.
+ */
+@Composable
+private fun FiltroTipos(
+    tipos: List<Pair<String, Int>>,
+    activos: Set<String>,
+    total: Int,
+    onAlternar: (String) -> Unit,
+    onTodos: () -> Unit,
+) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        item {
+            ChipTipo(
+                texto = "Todos ($total)",
+                color = MaterialTheme.colorScheme.primary,
+                seleccionado = activos.isEmpty(),
+                onClick = onTodos,
+            )
+        }
+        items(tipos) { (codigo, cuantos) ->
+            ChipTipo(
+                texto = "${com.example.senti.data.TipoDesastre.etiquetaDe(codigo)} ($cuantos)",
+                color = Color(com.example.senti.data.TipoDesastre.colorDe(codigo)),
+                seleccionado = codigo in activos,
+                onClick = { onAlternar(codigo) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChipTipo(
+    texto: String,
+    color: Color,
+    seleccionado: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        color = if (seleccionado) color.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(
+            if (seleccionado) 1.5.dp else 1.dp,
+            if (seleccionado) color else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+        ),
+        modifier = Modifier.clickable(onClick = onClick),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (miLat != null && miLon != null) {
-                Marker(
-                    state = MarkerState(LatLng(miLat, miLon)),
-                    title = "Mi ubicación",
-                    snippet = "Tu ubicación actual",
+            // El punto de color repite lo que dice el marcador en el mapa. El
+            // texto va siempre al lado: el color no es la información (§31.2).
+            Box(Modifier.size(9.dp).clip(CircleShape).background(color))
+            Spacer(Modifier.width(7.dp))
+            Text(
+                texto,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (seleccionado) FontWeight.SemiBold else FontWeight.Normal,
+            )
+        }
+    }
+}
+
+/**
+ * Ficha de un marcador tocado.
+ *
+ * Sustituye a la burbuja de Google, que recorta el texto a una línea y no cabe
+ * una descripción escrita por una persona. Lo que aquí importa además del qué
+ * es **de dónde viene**: un evento con respaldo oficial y un reporte ciudadano
+ * sin validar se leen distinto, y el §25 prohíbe presentarlos como lo mismo.
+ */
+@Composable
+private fun FichaMarcador(
+    marcador: MarcadorMapa,
+    onCerrar: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(Radios.tarjeta),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 8.dp,
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                Box(
+                    Modifier
+                        .padding(top = 5.dp)
+                        .size(11.dp)
+                        .clip(CircleShape)
+                        .background(Color(marcador.color))
                 )
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        marcador.titulo,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        marcador.etiquetaTipo,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color(marcador.color),
+                    )
+                }
+                IconButton(onClick = onCerrar, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Filled.Close, contentDescription = "Cerrar")
+                }
             }
-            eventosUbicados.forEach { evento ->
-                Marker(
-                    state = MarkerState(LatLng(evento.lat!!, evento.lon!!)),
-                    title = "[${evento.personas}] ${evento.title}",
-                    snippet = "${evento.personas} personas · ${evento.fuentesOficiales} fuentes oficiales · ${evento.estado}",
-                )
+
+            marcador.descripcion?.let {
+                Spacer(Modifier.height(9.dp))
+                Text(it, style = MaterialTheme.typography.bodySmall)
             }
-            ubicados.forEach { reporte ->
-                Marker(
-                    state = MarkerState(LatLng(reporte.lat!!, reporte.lon!!)),
-                    title = etiquetaTipoReporte(reporte.tipo),
-                    snippet = buildString {
-                        append(reporte.estado.replaceFirstChar { it.uppercase() })
-                        reporte.descripcion?.takeIf { it.isNotBlank() }?.let { append(" · $it") }
-                    },
+
+            Spacer(Modifier.height(10.dp))
+
+            // El origen, dicho con palabras y no solo con un color.
+            Text(
+                if (marcador.oficial) {
+                    "Confirmado por fuente oficial o municipal."
+                } else {
+                    "Reporte ciudadano. Todavía no ha sido validado."
+                },
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+                color = if (marcador.oficial) COLOR_ROJO else COLOR_AMARILLO,
+            )
+
+            val detalles = listOfNotNull(
+                marcador.confianza?.let { "Confianza: ${etiquetaConfianza(it)}" },
+                marcador.personas?.takeIf { it > 0 }?.let { "$it personas lo reportaron" },
+                marcador.fuentesOficiales?.takeIf { it > 0 }?.let { "$it fuentes oficiales" },
+                marcador.distrito,
+                marcador.fecha?.take(16)?.replace('T', ' '),
+            )
+            if (detalles.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    detalles.joinToString(" · "),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -1210,7 +1505,7 @@ private fun ListaReportes(
     reporteSeleccionado?.let { reporte ->
         AlertDialog(
             onDismissRequest = { reporteSeleccionado = null },
-            title = { Text(etiquetaTipoReporte(reporte.tipo)) },
+            title = { Text(TipoDesastre.etiquetaDe(reporte.tipo)) },
             // El detalle es un superconjunto de lo que ya se ve en la
             // tarjeta —distrito y fecha incluidos— y no un subconjunto: antes
             // se perdían al abrir "más información", que es justo al revés
@@ -1275,7 +1570,7 @@ private fun TarjetaReporte(
             Column(Modifier.padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        etiquetaTipoReporte(r.tipo),
+                        TipoDesastre.etiquetaDe(r.tipo),
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.weight(1f),
                     )
@@ -1396,7 +1691,7 @@ private fun FormularioReporte(
             Spacer(Modifier.height(6.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(tipos) { t ->
-                    TipoReporteChip(etiquetaTipoReporte(t), tipo == t) { tipo = t }
+                    TipoReporteChip(TipoDesastre.etiquetaDe(t), tipo == t) { tipo = t }
                 }
             }
         }
@@ -1554,11 +1849,14 @@ private fun TipoReporteChip(
 private fun PantallaPerfil(
     modifier: Modifier = Modifier,
     estado: com.example.senti.ui.SentiUiState,
+    onModoSinConexion: () -> Unit,
+    onCerrarSesion: () -> Unit,
 ) {
     Column(modifier.fillMaxSize()) {
         EncabezadoSenti(
             titulo = "Tu perfil",
             subtitulo = "Los datos mínimos para orientarte a ti y no a un promedio.",
+            onModoSinConexion = onModoSinConexion,
         )
         LazyColumn(
             Modifier.fillMaxSize().padding(horizontal = 14.dp),
@@ -1619,6 +1917,15 @@ private fun PantallaPerfil(
                     }
                 }
             }
+            item {
+                OutlinedButton(
+                    onClick = onCerrarSesion,
+                    shape = RoundedCornerShape(28.dp),
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                ) {
+                    Text("Cerrar sesión", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
             estado.error?.let { item { AvisoError(it) } }
         }
     }
@@ -1677,6 +1984,9 @@ private fun PantallaAcceso(
     error: String?,
     onLogin: (String, String) -> Unit,
     onRegistro: (String, String, String?, String?, String?, Boolean) -> Unit,
+    sesionGuardada: SesionLocal? = null,
+    hayRed: Boolean = true,
+    onEntrarSinConexion: () -> Unit = {},
 ) {
     var modoRegistro by remember { mutableStateOf(false) }
     var email by remember { mutableStateOf("") }
@@ -1685,7 +1995,19 @@ private fun PantallaAcceso(
     var distrito by remember { mutableStateOf("") }
     var telefono by remember { mutableStateOf("") }
     var recibirAlertas by remember { mutableStateOf(false) }
-    val puedeEnviar = email.isNotBlank() && pass.isNotBlank() && !autenticando
+
+    // El número se comprueba sobre sus dígitos, para que dé igual cómo lo
+    // escriba cada uno. Nueve dígitos empezando por 9 es el móvil peruano; el
+    // backend le antepone el 51 al canonizarlo.
+    //
+    // Es opcional: quien no lo dé se registra igual y usa la app. Lo que no
+    // puede es quedar a medias — un número mal escrito no avisa a nadie y
+    // además nadie se entera de que no avisó.
+    val digitosTelefono = telefono.filter { it.isDigit() }
+    val telefonoValido = digitosTelefono.length == 9 && digitosTelefono.startsWith("9")
+
+    val puedeEnviar = email.isNotBlank() && pass.isNotBlank() && !autenticando &&
+        (!modoRegistro || telefono.isBlank() || telefonoValido)
 
     Box(
         modifier
@@ -1827,9 +2149,33 @@ private fun PantallaAcceso(
                         Spacer(Modifier.height(12.dp))
                         OutlinedTextField(
                             value = telefono,
-                            onValueChange = { telefono = it },
+                            // Se filtran las letras al escribir en vez de
+                            // rechazarlas al enviar: un campo que las acepta y
+                            // luego dice que no valen hace escribir dos veces.
+                            onValueChange = { nuevo ->
+                                telefono = nuevo.filter { it.isDigit() || it == ' ' }.take(12)
+                            },
                             label = { Text("Teléfono WhatsApp (opcional)") },
+                            placeholder = { Text("9XX XXX XXX") },
                             singleLine = true,
+                            isError = telefono.isNotBlank() && !telefonoValido,
+                            supportingText = {
+                                Text(
+                                    if (telefono.isNotBlank() && !telefonoValido) {
+                                        // Un número mal escrito no avisa a
+                                        // nadie, y además nadie se entera de
+                                        // que no avisó. Se dice al teclearlo.
+                                        "Nueve dígitos y empieza por 9."
+                                    } else {
+                                        // §13.5, dicho donde se pide el dato y
+                                        // no en un enlace legal que nadie abre.
+                                        "En tu cuenta se guarda cifrado y de un solo " +
+                                            "sentido. Solo se conserva para poder " +
+                                            "escribirte si marcas la casilla de abajo."
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            },
                             shape = RoundedCornerShape(28.dp),
                             colors = coloresCampoPildora(),
                             modifier = Modifier.fillMaxWidth(),
@@ -1867,7 +2213,13 @@ private fun PantallaAcceso(
                                     email.trim(), pass,
                                     nombre.trim().ifBlank { null },
                                     distrito.trim().ifBlank { null },
-                                    telefono.trim().ifBlank { null },
+                                    // Van solo los dígitos. El backend los
+                                    // canoniza igualmente —les antepone el 51
+                                    // para que el seudónimo coincida con el
+                                    // del número que entrega WhatsApp—, así
+                                    // que esto es por no mandarle espacios
+                                    // que va a tirar de todos modos.
+                                    digitosTelefono.ifBlank { null },
                                     recibirAlertas,
                                 )
                             } else {
@@ -1905,6 +2257,71 @@ private fun PantallaAcceso(
                             },
                             style = MaterialTheme.typography.bodySmall,
                         )
+                    }
+
+                    // §26: si ya hubo un login en este teléfono, se puede
+                    // entrar sin red. No se comprueba nada contra el servidor
+                    // —no habría con qué— y por eso solo lleva al mapa
+                    // descargado y a las guías, nunca al chat.
+                    if (sesionGuardada != null) {
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = onEntrarSinConexion,
+                            shape = RoundedCornerShape(28.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.CloudOff,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                "Entrar sin conexión",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Última sesión de ${sesionGuardada.email}, guardada el " +
+                                formatearFechaHora(sesionGuardada.guardadaAt) + ".",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                        )
+                    } else if (!hayRed) {
+                        // Sin red y sin sesión guardada no se puede entrar, y
+                        // callarlo deja a alguien reintentando un formulario
+                        // que no puede funcionar. El §11.3 aplicado a la
+                        // propia app: se declara la causa, no se deja adivinar.
+                        Spacer(Modifier.height(14.dp))
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(Radios.tarjeta),
+                        ) {
+                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
+                                Icon(
+                                    Icons.Filled.CloudOff,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    "No hay conexión y este teléfono todavía no ha " +
+                                        "iniciado sesión ninguna vez. El modo sin " +
+                                        "conexión necesita una sesión guardada, y solo " +
+                                        "se guarda al entrar con internet al menos una " +
+                                        "vez.\n\nMientras tanto: 115 Defensa Civil · " +
+                                        "116 Bomberos · 106 SAMU.",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                     }
                 }
             }
