@@ -51,32 +51,6 @@ def decrypt_field(token: bytes | None) -> str | None:
         return None
 
 
-CODIGO_PAIS_PE = "51"
-
-
-def canonizar_telefono(phone: str) -> str:
-    """Deja el número en una sola forma antes de convertirlo en seudónimo.
-
-    **Sin esto el seudónimo no sirve para lo que existe.** El §10.1 dice que si
-    el seudónimo de quien escribe por WhatsApp coincide con el de una cuenta,
-    esa persona tiene su rol y sus herramientas (§6). Pero los dos caminos
-    traen el número escrito distinto: Evolution entrega el `remoteJid`
-    `51987654321@s.whatsapp.net`, con código de país, y en el registro la gente
-    teclea sus nueve dígitos. Dos textos distintos dan dos HMAC distintos, así
-    que el titular de la cuenta entraba por WhatsApp como invitado y **nada
-    fallaba**: simplemente recibía menos de lo que le corresponde.
-
-    Se canoniza a dígitos con código de país. Un móvil peruano son nueve
-    dígitos que empiezan por 9; a esos se les antepone el 51. Lo que ya trae
-    código de país o no encaja en ese patrón se deja como está: inventarle un
-    prefijo a un número extranjero sería peor que no tocarlo.
-    """
-    digitos = "".join(ch for ch in phone if ch.isdigit())
-    if len(digitos) == 9 and digitos.startswith("9"):
-        return CODIGO_PAIS_PE + digitos
-    return digitos
-
-
 def pseudonymize_phone(phone: str) -> str:
     """Identificador estable del titular sin conservar el número (§13.5).
 
@@ -84,9 +58,11 @@ def pseudonymize_phone(phone: str) -> str:
     el mismo identificador, pero el número no se puede recuperar del hash ni
     enumerar por fuerza bruta sin conocer la sal.
 
-    El número se canoniza antes (ver [canonizar_telefono]) para que la app y
-    WhatsApp produzcan el mismo seudónimo para la misma persona.
+    El número se canoniza antes con `rules.phones.canonizar_telefono` para que
+    la app y WhatsApp produzcan el mismo seudónimo para la misma persona.
     """
+    from app.rules.phones import canonizar_telefono
+
     return hmac.new(
         settings.phone_hash_salt.encode("utf-8"),
         canonizar_telefono(phone).encode("utf-8"),

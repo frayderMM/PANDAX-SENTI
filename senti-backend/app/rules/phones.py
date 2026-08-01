@@ -20,6 +20,34 @@ import unicodedata
 REGION_NACIONAL = "PE"
 REGION_LIMA_CALLAO = "PE-LIM"
 
+CODIGO_PAIS_PE = "51"
+
+
+def canonizar_telefono(phone: str) -> str:
+    """Deja un número en una sola forma: dígitos con código de país.
+
+    **Los dos caminos por los que llega un teléfono lo traen escrito distinto**,
+    y de ahí salen dos averías que no dan error:
+
+    - El seudónimo del §13.5. Evolution entrega `51987654321@s.whatsapp.net` y
+      en el registro la gente teclea nueve dígitos; dos textos distintos dan dos
+      HMAC distintos, así que el titular de una cuenta entraba por WhatsApp como
+      invitado y recibía menos de lo que le corresponde, en silencio.
+    - El envío. Evolution no enruta un número sin código de país: responde
+      `exists: false` y el mensaje no sale. Las alertas por distrito se mandan a
+      números capturados en el registro —nueve dígitos— así que fallarían todas
+      sin que nadie se enterara.
+
+    Un móvil peruano son nueve dígitos que empiezan por 9; a esos se les
+    antepone el 51. Lo que ya trae código de país o no encaja en ese patrón se
+    deja como está: inventarle un prefijo a un número extranjero lo convertiría
+    en otro número, que es peor que no reconocerlo.
+    """
+    digitos = "".join(ch for ch in phone if ch.isdigit())
+    if len(digitos) == 9 and digitos.startswith("9"):
+        return CODIGO_PAIS_PE + digitos
+    return digitos
+
 
 @dataclass(frozen=True)
 class EmergencyContact:

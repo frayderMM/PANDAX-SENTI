@@ -13,7 +13,9 @@ de avería silenciosa que este sistema existe para no tener.
 
 from __future__ import annotations
 
-from app.core.crypto import canonizar_telefono, pseudonymize_phone
+from app.channels.whatsapp import normalizar_numero
+from app.core.crypto import pseudonymize_phone
+from app.rules.phones import canonizar_telefono
 
 
 class TestCanonizacion:
@@ -71,3 +73,38 @@ class TestSeudonimo:
         assert "987654321" not in seudonimo
         assert "51987654321" not in seudonimo
         assert len(seudonimo) == 64  # SHA-256 en hexadecimal
+
+
+class TestNumeroDeEnvio:
+    """El número al que SENTI escribe (§10.1).
+
+    Evolution no enruta nueve dígitos sueltos: responde `exists: false` y el
+    mensaje no sale, sin que nada falle de este lado. Las alertas por distrito
+    van a números capturados en el alta —nueve dígitos— así que sin código de
+    país fallarían todas y en silencio.
+    """
+
+    def test_un_movil_de_nueve_digitos_sale_con_codigo_de_pais(self):
+        assert normalizar_numero("959319910") == "51959319910"
+
+    def test_da_igual_como_este_escrito(self):
+        for escrito in ("+51 959 319 910", "959-319-910", "51959319910"):
+            assert normalizar_numero(escrito) == "51959319910", escrito
+
+    def test_el_numero_al_que_se_escribe_y_el_seudonimo_no_pueden_divergir(self):
+        """La misma canonización en los dos caminos, o el enlace se rompe."""
+        assert pseudonymize_phone("959319910") == pseudonymize_phone(normalizar_numero("959319910"))
+
+    def test_un_LID_se_devuelve_intacto(self):
+        # WhatsApp ya no siempre identifica por teléfono: manda un LID, que no
+        # es un número. Deducirle un teléfono producía quince dígitos que
+        # Evolution rechazaba, y la respuesta se calculaba pero no se entregaba.
+        assert normalizar_numero("140368842588179@lid") == "140368842588179@lid"
+        assert normalizar_numero("51959319910@s.whatsapp.net") == "51959319910@s.whatsapp.net"
+
+    def test_lo_que_no_puede_ser_un_numero_se_rechaza(self):
+        import pytest
+
+        for basura in ("", "123", "hola", "@lid"):
+            with pytest.raises(ValueError):
+                normalizar_numero(basura)

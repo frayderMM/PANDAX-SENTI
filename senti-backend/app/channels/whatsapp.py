@@ -12,16 +12,14 @@ depende de ningún enlace.
 from __future__ import annotations
 
 import logging
-import re
 
 import httpx
 
 from app.core.config import settings
+from app.rules.phones import canonizar_telefono
 
 logger = logging.getLogger(__name__)
 
-# Evolution espera código de país + número, sin `+`, espacios ni guiones.
-_SOLO_DIGITOS = re.compile(r"\D+")
 # Perú: 51 + 9 dígitos. Se admite cualquier país, pero se rechaza lo que no
 # pueda ser un número: mandar basura a Evolution devuelve un 400 que nadie mira.
 _LONGITUD_MINIMA = 8
@@ -48,6 +46,14 @@ def normalizar_numero(numero: str) -> str:
 
     Solo se limpia lo que llega como número suelto, que es lo que escribe un
     humano al configurar algo: `+51 987-654-321` → `51987654321`.
+
+    **Y se le añade el código de país si le falta.** Evolution no enruta nueve
+    dígitos sueltos: responde `exists: false` y el mensaje no sale, sin error
+    por nuestra parte. Importa porque los números que la app captura en el alta
+    son justo esos nueve dígitos, y a ellos se dirigen las alertas por
+    distrito: sin esto fallarían todas y en silencio. Se usa la misma
+    canonización que el seudónimo del §13.5, para que el número al que se
+    escribe y el que identifica a la persona no puedan divergir.
     """
     if "@" in numero:
         jid = numero.strip()
@@ -55,7 +61,7 @@ def normalizar_numero(numero: str) -> str:
             raise ValueError(f"identificador de WhatsApp vacío: {numero!r}")
         return jid
 
-    limpio = _SOLO_DIGITOS.sub("", numero)
+    limpio = canonizar_telefono(numero)
     if not (_LONGITUD_MINIMA <= len(limpio) <= _LONGITUD_MAXIMA):
         raise ValueError(f"número de WhatsApp no utilizable: {numero!r}")
     return limpio
