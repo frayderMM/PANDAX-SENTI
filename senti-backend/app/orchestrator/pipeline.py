@@ -601,11 +601,14 @@ class Orchestrator:
         # esta búsqueda, una pregunta general la respondería el modelo con lo
         # que recuerde, que es exactamente lo que esa precedencia prohíbe.
         if resultado_verificado is None and not tools and not con_imagen:
+            consulta_rag = " ".join(
+                parte for parte in (entrada.contexto_previo, entrada.texto) if parte
+            )
             fragmentos = Retriever(self.ctx.session).buscar(
-                entrada.texto,
+                consulta_rag,
                 self.ctx.ahora,
                 region=self._distrito_usuario(),
-                coleccion=self._coleccion_rag(entrada.texto),
+                coleccion=self._coleccion_rag(consulta_rag),
             )
             if fragmentos:
                 resultado_verificado = como_contexto(fragmentos)

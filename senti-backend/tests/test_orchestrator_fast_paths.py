@@ -80,3 +80,9 @@ def test_no_tengo_senal_usa_instruccion_fija() -> None:
     assert salida.respuesta_plantilla_fija is True
     assert "espacio abierto" in salida.texto
     assert "111" not in salida.texto
+
+
+def test_rag_de_seguimiento_conserva_el_contexto_del_hilo() -> None:
+    assert Orchestrator._coleccion_rag(
+        "Hay agua entrando a mi casa. ¿Sigue siendo peligroso cruzar por ahí?"
+    ) == "inundacion"
