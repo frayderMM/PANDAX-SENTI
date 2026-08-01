@@ -1,0 +1,341 @@
+# SENTI — stack completo (§8, §9, §29)
+#
+# Perfiles:
+#   (ninguno)  núcleo: db, valkey, api, worker, beat
+#   llm-cpu    llama.cpp en CPU: un solo modelo para chat, visión y análisis
+#   llm-cuda   lo mismo con GPU, si algún día la hay
+#   geo        Valhalla (rutas). El mapa lo dibuja Google en el cliente.
+#   obs        Prometheus, Grafana
+#
+# El modelo se consume SIEMPRE por el contrato OpenAI en SENTI_LLM_BASE_URL.
+# Con LM Studio en el host apuntas a host.docker.internal:1234/v1 y no
+# levantas ningún perfil. En el servidor levantas llm-cpu y apuntas la URL a
+# http://llama-cpu:1234/v1. El código del backend no cambia.
+
+# Solo `api` (8000) y `reports-web` (8080) escuchan en todas las interfaces:
+# son los dos que un cliente tiene que alcanzar. El resto se ata a 127.0.0.1.
+#
+# No es paranoia: Postgres tiene contraseña pero Valkey NO pide ninguna, y
+# Valhalla tampoco. Hoy los tapa una regla de firewall en la nube, que es una
+# sola línea de defensa y fuera del repositorio. Quien amplíe esa regla por
+# comodidad —o levante otra máquina en la misma red— los deja al aire sin
+# enterarse. Para depurar siguen accesibles por un túnel SSH.
+name: senti
+
+x-llm-env: &llm-env
+  SENTI_LLM_BASE_URL: ${SENTI_LLM_BASE_URL:-http://host.docker.internal:1234/v1}
+  SENTI_LLM_API_KEY: ${SENTI_LLM_API_KEY:-lm-studio}
+  SENTI_LLM_MODEL: ${SENTI_LLM_MODEL:-google/gemma-4-e4b}
+  # Mismo servidor: las tareas de análisis no tienen un modelo aparte.
+  SENTI_LLM_DEEP_BASE_URL: ${SENTI_LLM_DEEP_BASE_URL:-${SENTI_LLM_BASE_URL:-http://host.docker.internal:1234/v1}}
+  SENTI_LLM_DEEP_MODEL: ${SENTI_LLM_DEEP_MODEL:-google/gemma-4-e4b}
+  SENTI_LLM_CONTEXT_LENGTH: ${SENTI_LLM_CONTEXT_LENGTH:-8192}
+  SENTI_LLM_MAX_TOKENS: ${SENTI_LLM_MAX_TOKENS:-96}
+  SENTI_LLM_TIMEOUT_SECONDS: ${SENTI_LLM_TIMEOUT_SECONDS:-120}
+  SENTI_EMBEDDING_BASE_URL: ${SENTI_EMBEDDING_BASE_URL:-http://host.docker.internal:1234/v1}
+  SENTI_EMBEDDING_MODEL: ${SENTI_EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v1.5}
+  SENTI_EMBEDDING_DIM: ${SENTI_EMBEDDING_DIM:-768}
+  SENTI_CITIZEN_LLM_BASE_URL: ${SENTI_CITIZEN_LLM_BASE_URL:-http://llama-citizen:1236/v1}
+  SENTI_CITIZEN_LLM_MODEL: ${SENTI_CITIZEN_LLM_MODEL:-google/gemma-2-2b-it}
+  SENTI_CITIZEN_SOURCE_POLL_MINUTES: ${SENTI_CITIZEN_SOURCE_POLL_MINUTES:-10}
+
+x-backend: &backend
+  build:
+    context: ./senti-backend
+  image: senti/backend:dev
+  env_file: [.env]
+  environment:
+    <<: *llm-env
+    SENTI_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-senti}:${POSTGRES_PASSWORD:-senti}@db:5432/${POSTGRES_DB:-senti}
+    SENTI_VALKEY_URL: redis://valkey:6379/0
+    SENTI_VALHALLA_URL: http://valhalla:8002
+  # Necesario en Docker Engine sobre Linux para alcanzar LM Studio en el host.
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  depends_on:
+    db: {condition: service_healthy}
+    valkey: {condition: service_started}
+  restart: unless-stopped
+
+services:
+  # ── Datos ───────────────────────────────────────────────────
+  db:
+    build: ./infra/postgres
+    image: senti/postgis-pgvector:17-3.5
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-senti}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-senti}
+      POSTGRES_DB: ${POSTGRES_DB:-senti}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports: ["127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-senti} -d ${POSTGRES_DB:-senti}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    command: ["valkey-server", "--save", "60", "1", "--appendonly", "no"]
+    volumes: [valkey-data:/data]
+    ports: ["127.0.0.1:${VALKEY_HOST_PORT:-6380}:6379"]
+    restart: unless-stopped
+
+  # ── Backend ─────────────────────────────────────────────────
+  api:
+    <<: *backend
+    command: >
+      uvicorn app.main:app --host 0.0.0.0 --port 8000
+      --proxy-headers --forwarded-allow-ips=*
+    ports: ["${API_HOST_PORT:-8000}:8000"]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=3).status==200 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Reportes web (Vue) ─────────────────────────────────────
+  reports-web:
+    build:
+      context: ./senti-web
+      args:
+        VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY:-}
+    image: senti/reportes-web:dev
+    depends_on:
+      api: {condition: service_started}
+    ports: ["${REPORTS_HOST_PORT:-8080}:8080"]
+    restart: unless-stopped
+
+  # §29: cola por prioridad rojo > naranja > amarillo > verde.
+  worker:
+    <<: *backend
+    command: >
+      celery -A app.tasks.celery_app worker
+      -Q rojo,naranja,amarillo,verde --loglevel=INFO --concurrency=2
+
+  # §11.3 healthcheck de fuentes cada 15 min · §13.5 retention_jobs
+  beat:
+    <<: *backend
+    command: celery -A app.tasks.celery_app beat --loglevel=INFO
+
+  # ── Modelo local (perfil llm-cuda) ──────────────────────────
+  # Mismo motor que usa LM Studio (llama.cpp CUDA 12) y mismo archivo GGUF.
+  # Requiere nvidia-container-toolkit en el host; ver README §Modelo.
+  llama-chat:
+    profiles: ["llm-cuda"]
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    volumes:
+      - ${LMSTUDIO_MODELS_DIR:-/home/andresqc/.lmstudio/models}:/models:ro
+    command: >
+      --model ${LLAMACPP_MODEL_PATH:-/models/lmstudio-community/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf}
+      --mmproj ${LLAMACPP_MMPROJ_PATH:-/models/lmstudio-community/gemma-4-E4B-it-GGUF/mmproj-gemma-4-E4B-it-BF16.gguf}
+      --alias ${SENTI_LLM_MODEL:-google/gemma-4-e4b}
+      --ctx-size ${LLAMACPP_CTX:-32768}
+      --n-gpu-layers ${LLAMACPP_NGL:-99}
+      --jinja
+      --host 0.0.0.0 --port 1234
+    ports: ["127.0.0.1:1234:1234"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:1234/health >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  llama-embed:
+    profiles: ["llm-cuda"]
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    volumes:
+      - ${LMSTUDIO_BUNDLED_MODELS_DIR:-/home/andresqc/.lmstudio/.internal/bundled-models}:/models-bundled:ro
+    command: >
+      --model /models-bundled/nomic-ai/nomic-embed-text-v1.5-GGUF/nomic-embed-text-v1.5.Q4_K_M.gguf
+      --alias ${SENTI_EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v1.5}
+      --embeddings --pooling mean --ctx-size 2048
+      --n-gpu-layers 99
+      --host 0.0.0.0 --port 1235
+    ports: ["127.0.0.1:1235:1235"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:1235/health >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  # ── Modelo en CPU (perfil llm-cpu) ──────────────────────────
+  # Para servidores sin GPU. La imagen sin CUDA pesa ~150 MB en vez de varios
+  # GB, que con una conexión lenta es la diferencia entre desplegar hoy o
+  # mañana.
+  #
+  #   --ctx-size       total, NO por peticion: se reparte entre las ranuras.
+  #                    16384 con --parallel 2 deja 8192 a cada una, que es lo
+  #                    que asume el backend.
+  #   --parallel 2     con una sola ranura las peticiones se serializan: medido
+  #                    aqui, la tercera de tres seguidas espero 58 s. Cabe
+  #                    porque la cache KV a q8_0 ocupa la mitad.
+  #   --threads        los núcleos FÍSICOS. Más hilos que núcleos empeora.
+  #   --threads-batch  TODOS los lógicos: leer el prompt es cómputo puro y sí
+  #                    escala con hilos, al revés que generar, que está
+  #                    limitado por ancho de banda de memoria.
+  #   --ubatch-size    lotes grandes al leer: el prompt del sistema son ~840
+  #                    fichas que se pagan en cada mensaje.
+  #   --cache-type-k/v generar esta limitado por ancho de banda de memoria, y
+  #                    la cache KV es lo que mas se lee en cada ficha. A q8_0
+  #                    ocupa la mitad, asi que se mueve la mitad de bytes.
+  #   --mlock          fija el modelo en RAM. Con 5 GB de GGUF y 10 GB libres
+  #                    sobra, y evita que el kernel expulse paginas del modelo
+  #                    para cachear otra cosa y haya que releerlas del disco.
+  # Único servidor del modelo. Sirve el chat, las imágenes (§25), la extracción
+  # de alertas (§15) y la categorización de reportes (§21.1).
+  #
+  # Antes eran dos, con el reparto por latencia del §15: uno pequeño para el
+  # chat y otro mayor para el análisis. Se midió y no había tal reparto: los
+  # dos GGUF eran enlaces al mismo archivo, así que llama.cpp cargaba el mismo
+  # modelo dos veces —6,1 GB de RAM— y los dos procesos se peleaban los cinco
+  # núcleos físicos. Uno solo va más rápido porque no compite consigo mismo.
+  #
+  # Carga `--mmproj` porque es el único que hay: sin él no habría visión.
+  llama-cpu:
+    profiles: ["llm-cpu"]
+    image: ghcr.io/ggml-org/llama.cpp:server
+    volumes:
+      - ${LLM_MODELS_DIR:-./modelos}:/models:ro
+    command: >
+      --model ${LLAMACPP_MODEL_PATH_CPU:-/models/gemma-4-E4B-it-Q4_K_M.gguf}
+      --mmproj ${LLAMACPP_MMPROJ_CPU:-/models/mmproj-gemma-4-E4B-it-BF16.gguf}
+      --alias ${SENTI_LLM_MODEL:-google/gemma-4-e4b}
+      --ctx-size ${LLAMACPP_CTX_CPU:-16384}
+      --parallel ${LLAMACPP_PARALLEL:-2}
+      --cache-reuse 256
+      --threads ${LLAMACPP_THREADS:-4}
+      --threads-batch ${LLAMACPP_THREADS_BATCH:-8}
+      --batch-size ${LLAMACPP_BATCH:-2048}
+      --ubatch-size ${LLAMACPP_UBATCH:-1024}
+      --cache-type-k ${LLAMACPP_CACHE_TYPE:-q8_0}
+      --cache-type-v ${LLAMACPP_CACHE_TYPE:-q8_0}
+      --mlock
+      --jinja
+      --host 0.0.0.0 --port 1234
+    ports: ["127.0.0.1:1234:1234"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:1234/health >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    restart: unless-stopped
+
+  llama-embed-cpu:
+    profiles: ["llm-cpu"]
+    image: ghcr.io/ggml-org/llama.cpp:server
+    volumes:
+      - ${LLM_MODELS_DIR:-./modelos}:/models:ro
+    command: >
+      --model ${LLAMACPP_EMBED_PATH_CPU:-/models/nomic-embed-text-v1.5.Q4_K_M.gguf}
+      --alias ${SENTI_EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v1.5}
+      --embeddings --pooling mean --ctx-size 2048
+      --threads ${LLAMACPP_THREADS:-5}
+      --host 0.0.0.0 --port 1235
+    ports: ["127.0.0.1:1235:1235"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:1235/health >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+    restart: unless-stopped
+
+  llama-citizen:
+    profiles: ["llm-cpu"]
+    image: ghcr.io/ggml-org/llama.cpp:server
+    volumes:
+      - ${LLM_MODELS_DIR:-./modelos}:/models:ro
+    command: >
+      --model ${LLAMACPP_CITIZEN_MODEL_PATH:-/models/gemma-2-2b-it-Q4_K_M.gguf}
+      --alias ${SENTI_CITIZEN_LLM_MODEL:-google/gemma-2-2b-it}
+      --ctx-size ${LLAMACPP_CITIZEN_CTX:-4096}
+      --threads ${LLAMACPP_CITIZEN_THREADS:-4}
+      --jinja
+      --host 0.0.0.0 --port 1236
+    ports: ["127.0.0.1:1236:1236"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:1236/health >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # ── Geoespacial (perfil geo) ────────────────────────────────
+  valhalla:
+    profiles: ["geo"]
+    image: ghcr.io/gis-ops/docker-valhalla/valhalla:latest
+    volumes:
+      - valhalla-tiles:/custom_files
+    environment:
+      tile_urls: ${OSM_PBF_URL:-https://download.geofabrik.de/south-america/peru-latest.osm.pbf}
+      # §20 quiere curvas de elevación para penalizar pendiente (§14,
+      # movilidad reducida), pero construirlas descarga gigas de SRTM y es el
+      # paso más largo y más frágil del build: si se interrumpe, el contenedor
+      # sale con código 0, `restart` lo relanza y la construcción empieza de
+      # cero. Medido: ocho reinicios sin llegar a servir una sola ruta.
+      #
+      # Sin elevación el motor funciona y `S_accesible` deja de penalizar por
+      # pendiente —lo declara `pendiente_max_pct=0.0` en el motor—, que es una
+      # degradación honesta y acotada. Se activa con SENTI_VALHALLA_ELEVACION=True
+      # cuando haya una ventana para dejarlo construir sin tocarlo.
+      # §20 quiere curvas de elevación para penalizar pendiente (§14). Se
+      # activa con SENTI_VALHALLA_ELEVACION cuando haya una ventana: el paso
+      # descarga gigas de SRTM y alarga mucho el primer build.
+      build_elevation: ${SENTI_VALHALLA_ELEVACION:-False}
+      build_admins: "True"
+      build_time_zones: "True"
+      use_tiles_ignore_pbf: "True"
+      force_rebuild: "False"
+      serve_tiles: "True"
+    ports: ["127.0.0.1:8002:8002"]
+    restart: "no"
+
+  prometheus:
+    profiles: ["obs"]
+    image: prom/prometheus:latest
+    volumes:
+      - ./infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports: ["127.0.0.1:9090:9090"]
+    restart: unless-stopped
+
+  grafana:
+    profiles: ["obs"]
+    image: grafana/grafana-oss:latest
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-senti}
+    volumes: [grafana-data:/var/lib/grafana]
+    ports: ["127.0.0.1:3001:3000"]
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  valkey-data:
+  valhalla-tiles:
+  prometheus-data:
+  grafana-data:
