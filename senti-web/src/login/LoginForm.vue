@@ -70,7 +70,7 @@ async function handleSubmit() {
     almacenamiento.setItem("senti_access_token", cuerpo.access_token);
     almacenamiento.setItem("senti_role", cuerpo.role);
     successMessage.value = "Sesión iniciada correctamente.";
-    window.location.assign("/dashboard.html");
+    window.location.assign("/admin.html#/dashboard");
   } catch (motivo) {
     errorMessage.value = motivo instanceof Error
       ? motivo.message

@@ -40,4 +40,28 @@ export const ICONS: Record<string, string> = {
   save: '<path d="M5 3h11l3 3v15H5V3Z"/><path d="M8 3v6h8V3"/><path d="M8 21v-7h8v7"/>',
   logout:
     '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>',
+  thermometer:
+    '<path d="M14 4a2 2 0 0 0-4 0v9.5a4 4 0 1 0 4 0V4Z"/><path d="M12 15v-5"/>',
+  droplet:
+    '<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11Z"/>',
+  percent: '<path d="M5 19 19 5"/><circle cx="7" cy="7" r="2.2"/><circle cx="17" cy="17" r="2.2"/>',
+  wind: '<path d="M3 8h11a2.5 2.5 0 1 0-2.3-3.4"/><path d="M3 12h15a2.5 2.5 0 1 1-2.3 3.4"/><path d="M3 16h8a2 2 0 1 1-1.8 2.8"/>',
+  sprout:
+    '<path d="M12 21v-8"/><path d="M12 13c-4 0-7-2.5-7-7 4 0 7 2 7 5 0-3 3-5 7-5 0 4.5-3 7-7 7Z"/>',
+  waves:
+    '<path d="M2 8c1.5-1.5 3-1.5 4.5 0s3 1.5 4.5 0 3-1.5 4.5 0 3 1.5 4.5 0"/><path d="M2 14c1.5-1.5 3-1.5 4.5 0s3 1.5 4.5 0 3-1.5 4.5 0 3 1.5 4.5 0"/><path d="M2 20c1.5-1.5 3-1.5 4.5 0s3 1.5 4.5 0 3-1.5 4.5 0 3 1.5 4.5 0"/>',
+  cloud:
+    '<path d="M7 18a4.5 4.5 0 0 1-.6-8.96 5.5 5.5 0 0 1 10.7-1.9A4.5 4.5 0 0 1 17 18H7Z"/>',
+  "cloud-rain":
+    '<path d="M6.5 15.5a4.3 4.3 0 0 1-.6-8.55A5.3 5.3 0 0 1 16.2 5.4a4.3 4.3 0 0 1-.7 10.1"/><path d="M8 19l-1 2M12 19l-1 2M16 19l-1 2"/>',
+  "cloud-lightning":
+    '<path d="M6.5 14.5a4.3 4.3 0 0 1-.6-8.55A5.3 5.3 0 0 1 16.2 4.4a4.3 4.3 0 0 1-.7 10.1"/><path d="m13 13-3 4h3l-3 4"/>',
+  "refresh-cw":
+    '<path d="M3 12a9 9 0 0 1 15.4-6.4L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.4 6.4L3 16"/><path d="M3 21v-5h5"/>',
+  "chevron-right": '<path d="m9 6 6 6-6 6"/>',
+  tree: '<path d="M12 22v-6"/><path d="M12 16 7 11h3L7 7h3L8 3h8l-2 4h3l-3 4h3l-5 5Z"/>',
+  mountain:
+    '<path d="m3 20 6.5-11L13 15l2.5-4L21 20Z"/><path d="m12.5 12.5 1.8-3.2"/>',
+  "file-text":
+    '<path d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z"/><path d="M15 2v5h5"/><path d="M8 13h8M8 17h8M8 9h3"/>',
 };

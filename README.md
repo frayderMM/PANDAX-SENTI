@@ -192,8 +192,15 @@ se caen en silencio:
 El acceso del portal municipal (`/login.html`) usa `POST /auth/login`; no simula
 una sesión en el navegador. El backend sigue siendo quien autentica y emite el
 token, y la interfaz solo permite continuar a los roles `operador_municipal` y
-`administrador`. Tras autenticarse, el portal abre `/dashboard.html`, que
-consulta el tablero y el mapa de calor agregado; sin token no muestra datos.
+`administrador`. Tras autenticarse, el portal abre `/admin.html#/dashboard`, el
+panel del operador (barra lateral con Dashboard y Alertas). Ese dashboard
+todavía trabaja con datos de ejemplo — clima, mapa de zona y métricas están
+pendientes de conectarse a Open-Meteo, Google Maps y al backend real.
+
+El tablero con datos reales (`GET /municipal/tablero` y el mapa de calor
+agregado) sigue existiendo en `/info-general.html`: mismo `POST /auth/login`,
+pero sin token no muestra nada. Hoy es una pantalla aparte, no enlazada desde
+el panel del operador.
 
 | Comprueba | Por qué ahí |
 |---|---|
