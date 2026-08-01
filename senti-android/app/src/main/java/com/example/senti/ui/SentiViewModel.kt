@@ -65,6 +65,7 @@ data class Mensaje(
     // encontró y verificó. Habilita abrirlo en Google Maps. Igual que la
     // ruta: el nombre, la dirección y la distancia ya van en el texto.
     val lugar: Lugar? = null,
+    val lugarSugerido: Lugar? = null,
 )
 
 data class SentiUiState(
@@ -228,6 +229,7 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
                             fuentes = r.fuentes,
                             ruta = r.ruta,
                             lugar = r.lugar,
+                            lugarSugerido = r.lugarSugerido,
                         )
                     }
                     it.copy(

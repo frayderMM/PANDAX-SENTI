@@ -333,8 +333,17 @@ hospital puede estar lejos —7,7 km desde Surco, muy fuera del radio de «lo qu
 tengo al lado»—. El nombre manda sobre el tipo: si el modelo dedujo `refugio` y
 el usuario dijo «Rebagliati», exigir las dos cosas no encuentra nada.
 
-Y si no aparece, **se declara la ausencia; no se sustituye por el más
-cercano**. Devolver otro hospital sin decirlo es la peor variante posible del
+Para una petición genérica de «hospital más cercano», SENTI pregunta primero si
+se busca un hospital público, uno privado o una estación de bomberos. Los
+recursos importados desde OpenStreetMap solo reciben la categoría pública o
+privada cuando la fuente trae una señal explícita de titularidad; si no, se
+mantienen como centro de salud genérico y no se inventa su condición. Si se
+solicita un establecimiento concreto, la respuesta conserva ese resultado y
+ofrece aparte el recurso de salud más cercano como sugerencia, con acciones
+separadas para «Cómo llegar» y «Ver mapa».
+
+Y si no aparece, **se declara la ausencia; no se sustituye silenciosamente por
+el más cercano**. Devolver otro hospital sin decirlo es la peor variante posible del
 §11.3: alguien pide un sitio, lee un nombre distinto con prisa y sigue un
 enlace hasta el lugar equivocado creyendo que va al que pidió.
 

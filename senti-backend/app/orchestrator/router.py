@@ -202,7 +202,14 @@ def argumentos_por_defecto(
     if intent is Intent.ALERTA:
         return {"zona": distrito or ""}
     if intent is Intent.RECURSOS and lat is not None and lon is not None:
-        return {"lat": lat, "lon": lon, "tipo": _tipo_recurso(texto)}
+        nombre = _nombre_recurso(texto)
+        argumentos = {"lat": lat, "lon": lon, "tipo": _tipo_recurso(texto)}
+        if nombre:
+            argumentos["nombre"] = nombre
+            # Un nombre concreto tiene prioridad sobre la pregunta pública/
+            # privada: el usuario ya eligió el establecimiento.
+            argumentos["tipo"] = "centro_salud"
+        return argumentos
     if intent is Intent.RUTA and lat is not None and lon is not None:
         # "Dame una ruta de salida" no nombra un destino. Con la ubicación
         # basta: el destino es el recurso seguro validado más cercano, que es
@@ -228,9 +235,29 @@ def argumentos_por_defecto(
 
 def _tipo_recurso(texto: str) -> str:
     n = normalize(texto)
+    if re.search(r"\bbomber[oa]s?\b|\bcompania de bomberos\b|\bestacion de bomberos\b", n):
+        return "bomberos"
+    if re.search(r"\bhospital(es)?\b", n) and not _nombre_recurso(texto):
+        if re.search(r"\bpublic[oa]s?\b|\bminsa\b|\bestatal\b|\bnacional\b", n):
+            return "hospital_publico"
+        if re.search(r"\bprivad[oa]s?\b|\bclinica\b|\bclínica\b|\nessalud\b", n):
+            return "hospital_privado"
+        return "hospital_preguntar"
     if re.search(r"\brefugio\b|\balbergue\b", n):
         return "refugio"
     return "centro_salud"
+
+
+def _nombre_recurso(texto: str) -> str | None:
+    """Extrae solo un nombre concreto; no convierte «hospital más cercano» en nombre."""
+    n = normalize(texto)
+    m = re.search(r"\b(?:hospital|clinica|clínica)\s+(?:del?|de la)?\s*([a-z0-9][\w .'-]{2,80})", n)
+    if not m:
+        return None
+    candidato = re.split(r"\b(?:mas|más)\s+cercan[oa]s?\b|\bcercan[oa]s?\b|\ben mi zona\b", m.group(1))[0].strip()
+    if candidato in {"publico", "publica", "privado", "privada", "nacional"}:
+        return None
+    return candidato.strip(" .,-") or None
 
 
 def _via_mencionada(texto: str) -> str:

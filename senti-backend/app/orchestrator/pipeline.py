@@ -125,9 +125,27 @@ def _primer_lugar(datos: dict[str, Any]) -> dict[str, Any] | None:
         "distancia_m": r.get("distancia_m"),
         "lat": r.get("lat"),
         "lon": r.get("lon"),
+        "tipo": r.get("tipo"),
         # §: OSM acredita que existe y dónde, no que el municipio lo haya
         # designado. El cliente debe poder decirlo.
         "ubicacion_referencial": bool(r.get("ubicacion_referencial")),
+    }
+
+
+def _lugar_sugerido(datos: dict[str, Any]) -> dict[str, Any] | None:
+    """Segundo resultado: el recurso más cercano cuando se pidió uno concreto."""
+    r = datos.get("recurso_sugerido")
+    if not isinstance(r, dict) or r.get("lat") is None or r.get("lon") is None:
+        return None
+    return {
+        "nombre": r.get("nombre"),
+        "direccion": r.get("direccion"),
+        "distancia_m": r.get("distancia_m"),
+        "lat": r.get("lat"),
+        "lon": r.get("lon"),
+        "tipo": r.get("tipo"),
+        "ubicacion_referencial": bool(r.get("ubicacion_referencial")),
+        "sugerido": True,
     }
 
 
@@ -203,6 +221,7 @@ class SalidaOrquestador:
     # El lugar encontrado, para que el cliente ofrezca abrirlo en el mapa.
     # Igual que la ruta: es una mejora sobre un texto que ya está completo.
     lugar: dict[str, Any] | None = None
+    lugar_sugerido: dict[str, Any] | None = None
     # §7.4: de las cuatro condiciones de activación del modo ligero, la latencia
     # es la única que el backend puede medir; las otras tres —fallos de envío de
     # media, petición del usuario y falta de señal D2C— solo las conoce el
@@ -414,6 +433,7 @@ class Orchestrator:
         # tool-calling entera: pasa de dos llamadas a una.
         ruta_calculada: dict[str, Any] | None = None
         lugar_encontrado: dict[str, Any] | None = None
+        lugar_sugerido: dict[str, Any] | None = None
         ruteo = router.rutear(entrada.texto, tiene_imagen=entrada.imagen is not None)
         tools = None
         resultado_verificado: str | None = None
@@ -457,6 +477,8 @@ class Orchestrator:
                         ruta_calculada = salida["meta"]["ruta"]
                     if salida["meta"].get("lugar"):
                         lugar_encontrado = salida["meta"]["lugar"]
+                    if salida["meta"].get("lugar_sugerido"):
+                        lugar_sugerido = salida["meta"]["lugar_sugerido"]
                     if salida["meta"].get("sin_ruta"):
                         adaptado = light_mode.adaptar(
                             fx.SIN_RUTA_VERIFICABLE, entrada.nivel_operacion
@@ -604,8 +626,10 @@ class Orchestrator:
 
                 if salida["meta"].get("ruta"):
                     ruta_calculada = salida["meta"]["ruta"]
-                if salida["meta"].get("lugar"):
-                    lugar_encontrado = salida["meta"]["lugar"]
+                    if salida["meta"].get("lugar"):
+                        lugar_encontrado = salida["meta"]["lugar"]
+                    if salida["meta"].get("lugar_sugerido"):
+                        lugar_sugerido = salida["meta"]["lugar_sugerido"]
 
                 # §20.5: si no hay ruta verificable el texto es literal y lo
                 # entrega el backend. Si se dejara que el modelo redactara
@@ -723,6 +747,7 @@ class Orchestrator:
             sugerir_modo_ligero=activacion.activo,
             motivo_modo_ligero=activacion.motivo,
             lugar=lugar_encontrado,
+            lugar_sugerido=lugar_sugerido,
             advertencias=adaptado.advertencias or [],
             ruta=ruta_calculada,
         )
@@ -818,6 +843,7 @@ class Orchestrator:
                 # respuesta—, así que esto es una mejora y nunca el portador de
                 # la instrucción: si el botón no aparece, no se pierde nada.
                 "lugar": _primer_lugar(r.datos),
+                "lugar_sugerido": _lugar_sugerido(r.datos),
                 # Lo que el cliente necesita para dibujar la ruta. Se enumera
                 # campo a campo y no se reenvía `r.datos` entero a propósito:
                 # ahí dentro van los subpuntajes y los motivos de descarte, que

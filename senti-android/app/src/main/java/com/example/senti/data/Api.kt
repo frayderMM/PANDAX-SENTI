@@ -258,6 +258,8 @@ data class Lugar(
     @SerialName("distancia_m") val distanciaM: Int? = null,
     val lat: Double,
     val lon: Double,
+    val tipo: String? = null,
+    val sugerido: Boolean = false,
     // OSM acredita que existe y dónde, no que el municipio lo haya designado
     // ni que esté abierto. Quien lo lea tiene derecho a saberlo.
     @SerialName("ubicacion_referencial") val ubicacionReferencial: Boolean = false,
@@ -276,6 +278,7 @@ data class ChatResponse(
     val advertencias: List<String> = emptyList(),
     val ruta: RutaCalculada? = null,
     val lugar: Lugar? = null,
+    @SerialName("lugar_sugerido") val lugarSugerido: Lugar? = null,
     // §29: amarillo y verde reciben acuse y el worker calcula la respuesta
     // aparte. Si esto viene a true, lo que se acaba de mostrar no es la
     // respuesta final: falta recogerla del hilo.

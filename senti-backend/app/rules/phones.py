@@ -6,7 +6,9 @@ caliente va contra la tabla, no contra este módulo.
 
 El módulo existe igual porque el §26 exige que los teléfonos por región estén
 disponibles sin conexión y el §29 exige que el nivel rojo responda con el
-modelo apagado — y, en el peor caso, también con la base de datos caída.
+modelo apagado — y, en el peor caso, también con la base de datos caída. La
+numeración nacional se verificó en el directorio oficial de la PCM y en las
+páginas de PNP, Minsa, Bomberos y EsSalud: https://www.gob.pe/547-telefonos-de-emergencia.
 """
 
 from __future__ import annotations

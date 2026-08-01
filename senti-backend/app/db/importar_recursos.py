@@ -64,10 +64,30 @@ TIPOS = {
     "hospital": "centro_salud",
     "clinic": "centro_salud",
     "doctors": "centro_salud",
+    "fire_station": "bomberos",
     "shelter": "refugio",
     "school": "refugio",
     "community_centre": "refugio",
 }
+
+
+def clasificar_salud(tags: dict, tipo_base: str) -> str:
+    """Clasifica solo cuando OSM aporta una señal explícita de titularidad."""
+    if tipo_base == "bomberos":
+        return tipo_base
+    texto = " ".join(
+        str(tags.get(k, "")) for k in ("operator", "owner", "healthcare:ownership", "operator:type")
+    ).lower()
+    operator_type = str(tags.get("operator:type", "")).lower()
+    if operator_type in {"public", "government"} or any(
+        marca in texto for marca in ("minsa", "ministerio de salud", "gobierno", "municipal", "essalud")
+    ):
+        return "hospital_publico"
+    if operator_type == "private" or any(
+        marca in texto for marca in ("privat", "clinic", "clínica")
+    ):
+        return "hospital_privado"
+    return tipo_base
 
 
 def consultar_overpass(bbox: tuple[float, float, float, float], timeout: int = 600) -> list[dict]:
@@ -120,9 +140,10 @@ def importar(bbox_nombre: str, limpiar: bool = False) -> int:
         for el in elementos:
             tags = el.get("tags", {})
             amenity = tags.get("amenity")
-            tipo = TIPOS.get(amenity)
-            if tipo is None:
+            tipo_base = TIPOS.get(amenity)
+            if tipo_base is None:
                 continue
+            tipo = clasificar_salud(tags, tipo_base)
 
             lat = el.get("lat") or (el.get("center") or {}).get("lat")
             lon = el.get("lon") or (el.get("center") or {}).get("lon")

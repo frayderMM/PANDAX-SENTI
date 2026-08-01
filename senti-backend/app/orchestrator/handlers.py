@@ -246,6 +246,7 @@ def consultar_perfil_hogar(ctx: ToolContext, _: SinArgs) -> ToolResult:
 # queda a 7,7 km de Surco, muy fuera de los 3 km por defecto. Buscar por nombre
 # dentro del radio de "lo que tengo al lado" es no buscar.
 RADIO_BUSQUEDA_POR_NOMBRE_M = 50000.0
+TIPOS_SALUD = ("centro_salud", "hospital_publico", "hospital_privado")
 
 
 @herramienta(
@@ -259,6 +260,15 @@ RADIO_BUSQUEDA_POR_NOMBRE_M = 50000.0
 )
 def buscar_recursos_cercanos(ctx: ToolContext, args: RecursosArgs) -> ToolResult:
     punto = from_shape(Point(args.lon, args.lat), srid=SRID)
+    if args.tipo == "hospital_preguntar" and not args.nombre:
+        return ToolResult(
+            ok=True,
+            datos={"recursos": []},
+            ausencia=(
+                "¿Buscas un hospital público, un hospital privado o una estación "
+                "de bomberos? Indícame cuál y te muestro el más cercano."
+            ),
+        )
 
     condiciones = [
         Resource.disponible.is_(True),
@@ -298,9 +308,41 @@ def buscar_recursos_cercanos(ctx: ToolContext, args: RecursosArgs) -> ToolResult
             # No se sustituye por el más cercano. Quien pide Rebagliati y
             # recibe otro hospital sin que nadie se lo diga puede acabar
             # conduciendo al sitio equivocado creyendo que va al que pidió.
+            fila_cercana = ctx.session.execute(
+                select(
+                    Resource,
+                    func.ST_Distance(
+                        Resource.geom.cast(GEOGRAPHY), cast(punto, GEOGRAPHY)
+                    ).label("dist"),
+                )
+                .where(
+                    Resource.disponible.is_(True),
+                    Resource.validado.is_(True),
+                    Resource.tipo.in_(TIPOS_SALUD),
+                    func.ST_DWithin(
+                        Resource.geom.cast(GEOGRAPHY), cast(punto, GEOGRAPHY), args.radio_m
+                    ),
+                )
+                .order_by(text("dist"))
+                .limit(1)
+            ).first()
+            sugerido = None
+            if fila_cercana:
+                r, d = fila_cercana
+                sugerido = {
+                    "id": str(r.id),
+                    "nombre": r.nombre,
+                    "tipo": r.tipo,
+                    "direccion": r.direccion,
+                    "distancia_m": round(float(d)),
+                    "telefono": r.telefono,
+                    "ubicacion_referencial": r.origen_osm,
+                    "lat": ctx.session.scalar(select(func.ST_Y(r.geom))),
+                    "lon": ctx.session.scalar(select(func.ST_X(r.geom))),
+                }
             return ToolResult(
                 ok=True,
-                datos={"recursos": []},
+                datos={"recursos": [], "recurso_sugerido": sugerido} if sugerido else {"recursos": []},
                 ausencia=(
                     f"No encuentro ningún sitio registrado que se llame "
                     f"«{args.nombre}» a menos de {radio / 1000:.0f} km. No significa "
@@ -317,26 +359,64 @@ def buscar_recursos_cercanos(ctx: ToolContext, args: RecursosArgs) -> ToolResult
             ),
         )
 
+    recursos = [
+        {
+            "id": str(r.id),
+            "nombre": r.nombre,
+            "tipo": r.tipo,
+            "direccion": r.direccion,
+            "distancia_m": round(float(d)),
+            "telefono": r.telefono,
+            "acepta_mascotas": r.acepta_mascotas,
+            "ubicacion_referencial": r.origen_osm,
+            "accesible_movilidad_reducida": r.accesible_movilidad_reducida,
+            "lat": ctx.session.scalar(select(func.ST_Y(r.geom))),
+            "lon": ctx.session.scalar(select(func.ST_X(r.geom))),
+        }
+        for r, d in filas
+    ]
+
+    sugerido = None
+    if args.nombre:
+        fila_cercana = ctx.session.execute(
+            select(
+                Resource,
+                func.ST_Distance(
+                    Resource.geom.cast(GEOGRAPHY), cast(punto, GEOGRAPHY)
+                ).label("dist"),
+            )
+            .where(
+                Resource.disponible.is_(True),
+                Resource.validado.is_(True),
+                Resource.tipo.in_(TIPOS_SALUD),
+                func.ST_DWithin(
+                    Resource.geom.cast(GEOGRAPHY), cast(punto, GEOGRAPHY), args.radio_m
+                ),
+            )
+            .order_by(text("dist"))
+            .limit(1)
+        ).first()
+        if fila_cercana:
+            r, d = fila_cercana
+            sugerido = {
+                "id": str(r.id),
+                "nombre": r.nombre,
+                "tipo": r.tipo,
+                "direccion": r.direccion,
+                "distancia_m": round(float(d)),
+                "telefono": r.telefono,
+                "ubicacion_referencial": r.origen_osm,
+                "lat": ctx.session.scalar(select(func.ST_Y(r.geom))),
+                "lon": ctx.session.scalar(select(func.ST_X(r.geom))),
+            }
+
+    datos = {"recursos": recursos}
+    if sugerido and (not recursos or sugerido["id"] != recursos[0]["id"]):
+        datos["recurso_sugerido"] = sugerido
+
     return ToolResult(
         ok=True,
-        datos={
-            "recursos": [
-                {
-                    "id": str(r.id),
-                    "nombre": r.nombre,
-                    "tipo": r.tipo,
-                    "direccion": r.direccion,
-                    "distancia_m": round(float(d)),
-                    "telefono": r.telefono,
-                    "acepta_mascotas": r.acepta_mascotas,
-                    "ubicacion_referencial": r.origen_osm,
-                    "accesible_movilidad_reducida": r.accesible_movilidad_reducida,
-                    "lat": ctx.session.scalar(select(func.ST_Y(r.geom))),
-                    "lon": ctx.session.scalar(select(func.ST_X(r.geom))),
-                }
-                for r, d in filas
-            ]
-        },
+        datos=datos,
         fuentes=[{"institucion": "Registro municipal de recursos", "confianza": "MUNICIPAL"}],
     )
 
