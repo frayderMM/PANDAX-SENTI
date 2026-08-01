@@ -492,11 +492,20 @@ cuando hay una emergencia y llegan todos a la vez.
 | cabecera `X-Senti-Token` | Evolution no firma sus peticiones: sin secreto compartido, quien descubra la URL hace que SENTI escriba a quien él diga |
 | `SENTI_WHATSAPP_ENABLED=false` → 503 | un canal de emergencia a medio configurar que traga mensajes en silencio es peor que uno que declara que no está |
 
-**El teléfono nunca se guarda en claro** (§13.5). La conversación se busca y se
-crea por seudónimo; el número en claro vive en memoria el tiempo de contestar.
-Si ese seudónimo coincide con el de una cuenta, quien escribe tiene sus
-herramientas y su rol (§6); si no, entra como invitado y recibe información
-general (§13.4). El rol sale de la cuenta, nunca del canal.
+**El teléfono nunca se guarda en claro por defecto** (§13.5). La conversación
+se busca y se crea por seudónimo; el número en claro vive en memoria el
+tiempo de contestar. Si ese seudónimo coincide con el de una cuenta, quien
+escribe tiene sus herramientas y su rol (§6); si no, entra como invitado y
+recibe información general (§13.4). El rol sale de la cuenta, nunca del
+canal.
+
+La única excepción, y solo con consentimiento explícito y separado
+(`ConsentPurpose.ALERTAS_WHATSAPP`, no implícito por dar el teléfono en el
+registro): `AlertSubscriber` guarda nombre, teléfono y distrito en claro,
+porque es la única forma de que SENTI escriba por iniciativa propia en vez
+de solo responder. Revocar ese consentimiento en `POST /auth/consentimiento`
+desactiva la suscripción; el número sigue en la tabla (por si se reactiva)
+pero deja de recibir nada.
 
 El primer contacto recibe el aviso del §13.4 y **no se procesa nada más** hasta
 que responda `ACEPTO`. Se guarda cuándo aceptó y qué versión del aviso: demostrar
@@ -607,16 +616,21 @@ según el camino:
 
 ## Entidades (§27)
 
-28 tablas. El rol no es una de ellas: es un enum en la columna del usuario,
+29 tablas. El rol no es una de ellas: es un enum en la columna del usuario,
 validado en `core/security.py`.
 
 `users` `consents` `household_profiles` · `alerts` `alert_zones`
-`municipal_notices` · `official_sources` `source_health` `documents`
-`document_chunks` · `citizen_reports` `report_validations` `resources` ·
-`hazards` `affected_roads` `road_blocks` `routes` `route_segments` ·
-`family_plans` `plan_tasks` `conversations` `messages` `incidents` ·
-`audit_logs` `retention_jobs` `risk_parameters` `protocols`
+`alert_subscribers` `municipal_notices` · `official_sources` `source_health`
+`documents` `document_chunks` · `citizen_reports` `report_validations`
+`resources` · `hazards` `affected_roads` `road_blocks` `routes`
+`route_segments` · `family_plans` `plan_tasks` `conversations` `messages`
+`incidents` · `audit_logs` `retention_jobs` `risk_parameters` `protocols`
 `emergency_phones`
+
+`alert_subscribers` es la única tabla con un teléfono en claro (§13.4): nace
+solo del consentimiento explícito `ALERTAS_WHATSAPP` en `POST /auth/registro`,
+nunca por inferencia desde `users.phone_pseudonym` (que sigue siendo
+irreversible para todo lo demás).
 
 ## Herramientas (§16)
 

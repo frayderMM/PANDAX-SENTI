@@ -209,3 +209,8 @@ class ConsentPurpose(str, enum.Enum):
     FOTOGRAFIA = "fotografia"
     PERFIL_HOGAR = "perfil_hogar"
     CONTACTO_CONFIANZA = "contacto_confianza"
+    # A diferencia de las demás, esta finalidad implica guardar el teléfono
+    # en texto plano (AlertSubscriber): es la única forma de poder escribirle
+    # a alguien por WhatsApp por iniciativa del sistema. Por eso exige
+    # teléfono y distrito explícitos en el registro, no solo el checkbox.
+    ALERTAS_WHATSAPP = "alertas_whatsapp"

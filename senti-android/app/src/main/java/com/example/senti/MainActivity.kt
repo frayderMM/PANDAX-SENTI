@@ -73,6 +73,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -279,8 +280,8 @@ fun PantallaSenti(modifier: Modifier = Modifier) {
             autenticando = estado.autenticando,
             error = estado.error,
             onLogin = { email, pass -> vm.iniciarSesion(email, pass) },
-            onRegistro = { email, pass, nombre, distrito ->
-                vm.registrar(email, pass, nombre, distrito)
+            onRegistro = { email, pass, nombre, distrito, telefono, recibirAlertas ->
+                vm.registrar(email, pass, nombre, distrito, telefono, recibirAlertas)
             },
         )
         return
@@ -1675,13 +1676,15 @@ private fun PantallaAcceso(
     autenticando: Boolean,
     error: String?,
     onLogin: (String, String) -> Unit,
-    onRegistro: (String, String, String?, String?) -> Unit,
+    onRegistro: (String, String, String?, String?, String?, Boolean) -> Unit,
 ) {
     var modoRegistro by remember { mutableStateOf(false) }
     var email by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
     var nombre by remember { mutableStateOf("") }
     var distrito by remember { mutableStateOf("") }
+    var telefono by remember { mutableStateOf("") }
+    var recibirAlertas by remember { mutableStateOf(false) }
     val puedeEnviar = email.isNotBlank() && pass.isNotBlank() && !autenticando
 
     Box(
@@ -1821,6 +1824,29 @@ private fun PantallaAcceso(
                             colors = coloresCampoPildora(),
                             modifier = Modifier.fillMaxWidth(),
                         )
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = telefono,
+                            onValueChange = { telefono = it },
+                            label = { Text("Teléfono WhatsApp (opcional)") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(28.dp),
+                            colors = coloresCampoPildora(),
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = recibirAlertas,
+                                onCheckedChange = { recibirAlertas = it },
+                            )
+                            Text(
+                                "Avísenme por WhatsApp de las alertas de mi distrito. " +
+                                    "Necesita teléfono y distrito.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                     }
 
                     error?.let {
@@ -1841,6 +1867,8 @@ private fun PantallaAcceso(
                                     email.trim(), pass,
                                     nombre.trim().ifBlank { null },
                                     distrito.trim().ifBlank { null },
+                                    telefono.trim().ifBlank { null },
+                                    recibirAlertas,
                                 )
                             } else {
                                 onLogin(email.trim(), pass)
