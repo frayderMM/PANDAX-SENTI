@@ -1,0 +1,16 @@
+# §29: disponibilidad, latencia por nivel, errores, estado de conectores,
+# profundidad de cola, incidentes activos, tasa de modo ligero y tiempo
+# promedio de validación.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: senti-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

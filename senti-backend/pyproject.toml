@@ -1,0 +1,52 @@
+[project]
+name = "senti-backend"
+version = "0.1.0"
+description = "SENTI — Gestión de Emergencias Naturales con Monitoreo y Asistencia"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic[email]>=2.9",
+    "pydantic-settings>=2.6",
+    "sqlalchemy>=2.0.36",
+    "psycopg[binary]>=3.2",
+    "geoalchemy2>=0.15",
+    "pgvector>=0.3",
+    "alembic>=1.14",
+    "celery[redis]>=5.4",
+    "redis>=5.2",
+    "httpx>=0.28",
+    "shapely>=2.0",
+    "pyjwt>=2.10",
+    "bcrypt>=4.2",
+    "cryptography>=44.0",
+    "python-multipart>=0.0.20",
+    "pillow>=11.0",
+    "pypdf>=5.1",
+    "prometheus-fastapi-instrumentator>=7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "respx>=0.22",
+    "ruff>=0.8",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# F821 detecta nombres usados sin importar. Un endpoint con un import que falta
+# pasa los tests y el arranque sin decir nada, y revienta con un 500 la primera
+# vez que alguien lo llama. Pasó con `or_` y `text` en GET /reportes.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
