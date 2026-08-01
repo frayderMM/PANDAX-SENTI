@@ -184,7 +184,8 @@ se caen en silencio:
 El acceso del portal municipal (`/login.html`) usa `POST /auth/login`; no simula
 una sesión en el navegador. El backend sigue siendo quien autentica y emite el
 token, y la interfaz solo permite continuar a los roles `operador_municipal` y
-`administrador`.
+`administrador`. Tras autenticarse, el portal abre `/dashboard.html`, que
+consulta el tablero y el mapa de calor agregado; sin token no muestra datos.
 
 | Comprueba | Por qué ahí |
 |---|---|
