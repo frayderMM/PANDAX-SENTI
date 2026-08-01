@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Solo la caché: la foto de la cámara es temporal y no debe quedar en el
+     almacenamiento del usuario. El §13.5 le da 30 días en el servidor; en el
+     dispositivo no tiene por qué sobrevivir al envío. -->
+<paths>
+    <cache-path name="fotos" path="." />
+</paths>
