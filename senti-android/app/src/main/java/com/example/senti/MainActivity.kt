@@ -281,6 +281,7 @@ fun PantallaSenti(
     estado: com.example.senti.ui.SentiUiState,
     modifier: Modifier = Modifier,
 ) {
+    val contexto = LocalContext.current
     val offlineVm: ModoOfflineViewModel = viewModel()
     val offline by offlineVm.estado.collectAsStateWithLifecycle()
 
@@ -303,6 +304,11 @@ fun PantallaSenti(
             preparado = offline.preparado,
             avisoSync = offline.avisoSync,
             onSincronizar = { offlineVm.sincronizar(estado.lat, estado.lon) },
+            onCentrarUbicacion = {
+                Ubicacion.ultimaConocida(contexto)?.let { (lat, lon) ->
+                    vm.fijarUbicacion(lat, lon)
+                }
+            },
             onSalir = { offlineVm.salir() },
             modifier = modifier,
         )

@@ -145,7 +145,9 @@ fun LienzoMapaOffline(
 
     LaunchedEffect(solicitudCentrado) {
         if (solicitudCentrado == 0) return@LaunchedEffect
-        val destino = miUbicacion ?: return@LaunchedEffect
+        val destino = miUbicacion
+            ?: paquete?.let { Punto(it.centroLat, it.centroLon) }
+            ?: Punto(-11.9404, -76.7006)
         mapa[0]?.animateCamera(
             CameraUpdateFactory.newLatLngZoom(LatLng(destino.lat, destino.lon), 16.0)
         )

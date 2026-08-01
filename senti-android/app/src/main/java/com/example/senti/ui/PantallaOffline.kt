@@ -92,6 +92,7 @@ fun PantallaOffline(
     preparado: Boolean,
     avisoSync: String?,
     onSincronizar: () -> Unit,
+    onCentrarUbicacion: () -> Unit,
     onSalir: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -184,7 +185,10 @@ fun PantallaOffline(
         ) {
             BotonOffline(Icons.AutoMirrored.Filled.MenuBook, "Guías") { hojaGuias = true }
             BotonOffline(Icons.AutoMirrored.Filled.AltRoute, "Rutas guardadas") { hojaRutas = true }
-            BotonOffline(Icons.Filled.MyLocation, "Centrar ubicación") { solicitudCentrado++ }
+            BotonOffline(Icons.Filled.MyLocation, "Centrar ubicación") {
+                onCentrarUbicacion()
+                solicitudCentrado++
+            }
             BotonOffline(Icons.Filled.Close, "Salir del modo offline") { confirmarSalida = true }
         }
 
