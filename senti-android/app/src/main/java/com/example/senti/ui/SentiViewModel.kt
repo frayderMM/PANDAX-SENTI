@@ -8,11 +8,13 @@ import com.example.senti.data.OfflineStore
 import com.example.senti.data.Fuente
 import com.example.senti.data.Lugar
 import com.example.senti.data.PaqueteOffline
+import com.example.senti.data.PreferenciasStore
 import com.example.senti.data.Punto
 import com.example.senti.data.RutaCalculada
 import com.example.senti.data.ReporteResumen
 import com.example.senti.data.SesionLocal
 import com.example.senti.data.SesionSegura
+import com.example.senti.data.TemaApp
 import com.example.senti.data.TextosFijos
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -104,11 +106,14 @@ data class SentiUiState(
      * que redacte el modelo.
      */
     val sinRutaTrasMarcar: String? = null,
+    /** Preferencia de tema, guardada en el dispositivo y no en la cuenta. */
+    val tema: TemaApp = TemaApp.SISTEMA,
 )
 
 class SentiViewModel(app: Application) : AndroidViewModel(app) {
 
     private val store = OfflineStore(app)
+    private val preferencias = PreferenciasStore(app)
     private val sesionSegura = SesionSegura(app)
     private val _estado = MutableStateFlow(SentiUiState())
     val estado: StateFlow<SentiUiState> = _estado.asStateFlow()
@@ -124,6 +129,10 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
             _estado.update { it.copy(autenticado = true) }
         }
 
+        viewModelScope.launch {
+            // El tema es del dispositivo: se carga siempre, haya o no sesión.
+            _estado.update { it.copy(tema = preferencias.leerTema()) }
+        }
         viewModelScope.launch {
             // El paquete offline se carga ANTES de intentar la red: si no hay
             // cobertura, la app ya tiene algo que mostrar en vez de una
@@ -380,6 +389,11 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
             }
+    }
+
+    fun fijarTema(tema: TemaApp) = viewModelScope.launch {
+        preferencias.guardarTema(tema)
+        _estado.update { it.copy(tema = tema) }
     }
 
     fun descartarAvisoSinRuta() = _estado.update { it.copy(sinRutaTrasMarcar = null) }
