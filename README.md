@@ -104,6 +104,14 @@ comunitario · 0,0 si no hay información reciente de la zona. Los mínimos de
 duración y distancia se calculan **sobre las supervivientes**: compararse con
 una ruta descartada falsearía ambos subpuntajes.
 
+Los eventos viales activos que aparecen como marcadores (vía bloqueada,
+derrumbe, huaico, puente, inundación, agua o poste) también entran en la ruta:
+los oficiales se incorporan como señal validada y el cliente envía como
+`exclude_locations` los conflictos que caen sobre la ruta cuando el usuario
+recalcula. Un marcador no vial, como un sismo, no se interpreta como obstáculo
+de carretera. Un reporte ciudadano pendiente sigue siendo una penalización y
+no un cierre oficial.
+
 **Confianza (§21.2).** pendiente → probable (2 reportes de personas distintas,
 <300 m, <60 min) → validado (validador **con evidencia**) → confirmado
 (municipio o Estado). Solo `confirmado` excluye de la ruta.

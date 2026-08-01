@@ -71,6 +71,9 @@ import com.example.senti.ui.theme.Radios
 import com.example.senti.ui.theme.SentiCeleste
 import com.example.senti.ui.theme.SentiPrimary
 import kotlin.math.cos
+import kotlin.math.atan2
+import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlinx.coroutines.launch
 
 /** Qué se marca al tocar el mapa. */
@@ -79,6 +82,25 @@ private enum class ModoMapa { NINGUNO, ATASCO, DESTINO }
 private val ROJO = Color(0xFFD64545)
 private val AMBAR = Color(0xFFE8A33D)
 private val VERDE = Color(0xFF2E9E5B)
+
+private fun esConflictoVial(tipo: String, titulo: String): Boolean {
+    val texto = "$tipo $titulo".lowercase()
+    return listOf(
+        "via_bloqueada", "bloqueo", "derrumbe", "deslizamiento", "huaico",
+        "puente", "inundacion", "inundación", "agua", "poste", "caida_poste",
+        "caída de postes", "obstacul",
+    ).any(texto::contains)
+}
+
+private fun distanciaMetros(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val radioTierra = 6_371_000.0
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) *
+        sin(dLon / 2) * sin(dLon / 2)
+    return radioTierra * 2 * atan2(sqrt(a), sqrt(1 - a))
+}
 
 /**
  * Mapa de la ruta de salida.
@@ -124,6 +146,21 @@ fun MapaRuta(
     }
 
     val puntosRuta = remember(ruta.geometria) { ruta.puntos }
+    // Los eventos que caen sobre la ruta no pueden quedarse como decoración:
+    // al pedir un nuevo cálculo se envían como exclusiones puntuales. Así un
+    // conflicto visible (derrumbe, vía bloqueada, puente afectado, etc.) se
+    // usa en la decisión aunque todavía no haya sido convertido en un cierre
+    // oficial en el backend. Los eventos sísmicos, por ejemplo, no son
+    // obstáculos viales y se dejan fuera.
+    val eventosEnRuta = remember(puntosRuta, eventos) {
+        eventos.filter { evento ->
+            val lat = evento.lat
+            val lon = evento.lon
+            lat != null && lon != null && esConflictoVial(evento.type, evento.title) &&
+                puntosRuta.any { punto -> distanciaMetros(punto.lat, punto.lon, lat, lon) <= 250.0 }
+        }.map { Punto(it.lat!!, it.lon!!) }
+    }
+    val puntosAevitar = misMarcas + eventosEnRuta
     val origen = remember(ruta, miUbicacion) {
         when {
             ruta.origenLat != null && ruta.origenLon != null ->
@@ -323,7 +360,7 @@ fun MapaRuta(
         PanelInferiorMapa(
             ruta = ruta,
             modo = modo,
-            marcas = misMarcas.size,
+            marcas = puntosAevitar.size,
             tieneDestino = destinoElegido != null,
             onCambiarModo = { modo = if (modo == it) ModoMapa.NINGUNO else it },
             onCentrar = {
@@ -337,7 +374,7 @@ fun MapaRuta(
                 }
             },
             onQuitarUltima = { if (misMarcas.isNotEmpty()) misMarcas = misMarcas.dropLast(1) },
-            onRecalcular = { onRecalcular(misMarcas, destinoElegido) },
+            onRecalcular = { onRecalcular(puntosAevitar, destinoElegido) },
             recalculando = recalculando,
             modifier = Modifier.align(Alignment.BottomCenter),
         )

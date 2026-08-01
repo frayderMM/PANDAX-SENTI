@@ -33,7 +33,16 @@ from sqlalchemy import case, cast, func, select
 from sqlalchemy.orm import Session
 
 from app.domain import ConfidenceLevel, HazardType, TrustLevel
-from app.models import CitizenReport, Hazard, Resource, RoadBlock, Route, RouteSegment
+from app.models import (
+    CitizenReport,
+    EmergencyEvent,
+    EventSource,
+    Hazard,
+    Resource,
+    RoadBlock,
+    Route,
+    RouteSegment,
+)
 from app.models.base import SRID
 from app.rules import scoring
 from app.rules.scoring import (
@@ -55,6 +64,15 @@ GEOGRAPHY = Geography(srid=SRID)
 
 # §20.3: "reporte ... a menos de 200 m".
 RADIO_REPORTE_M = scoring.RADIO_REPORTE_M
+TIPOS_EVENTO_VIAL = {
+    HazardType.VIA_BLOQUEADA,
+    HazardType.DESLIZAMIENTO,
+    HazardType.HUAICO,
+    HazardType.PUENTE_AFECTADO,
+    HazardType.ACUMULACION_AGUA,
+    HazardType.INUNDACION,
+    HazardType.CAIDA_POSTE,
+}
 
 # §20.4: umbral de cobertura cartográfica. Se registra por distrito antes del
 # piloto; estos son los valores de arranque.
@@ -237,7 +255,47 @@ class RouteEngine:
                 )
                 for nivel, tipo, reportado, dist in filas
             )
-            comunitarios += len(reportes)
+
+            # Los eventos oficiales que aparecen como marcadores no siempre
+            # tienen todavía una fila en `citizen_reports` (por ejemplo, un
+            # aviso vial importado desde una fuente externa). Antes solo se
+            # pintaban en Android y no participaban en la ruta. Se incorporan
+            # como señal validada, sin convertir automáticamente un marcador
+            # en cierre duro.
+            eventos_oficiales = self.session.execute(
+                select(
+                    EmergencyEvent.tipo,
+                    EmergencyEvent.last_reported_at,
+                    func.ST_Distance(
+                        EmergencyEvent.geom.cast(GEOGRAPHY),
+                        cast(geom_sub, GEOGRAPHY),
+                    ).label("dist"),
+                )
+                .join(EventSource, EventSource.event_id == EmergencyEvent.id)
+                .where(
+                    EventSource.is_official.is_(True),
+                    EmergencyEvent.tipo.in_(TIPOS_EVENTO_VIAL),
+                    EmergencyEvent.last_reported_at.is_not(None),
+                    func.ST_DWithin(
+                        EmergencyEvent.geom.cast(GEOGRAPHY),
+                        cast(geom_sub, GEOGRAPHY),
+                        RADIO_REPORTE_M,
+                    ),
+                )
+                .distinct()
+            ).all()
+            reportes_evento_oficial = tuple(
+                ReportRisk(
+                    trust_level=TrustLevel.VALIDADO,
+                    tipo=tipo,
+                    reportado_at=reportado,
+                    distancia_m=float(dist),
+                )
+                for tipo, reportado, dist in eventos_oficiales
+            )
+            reportes = reportes + reportes_evento_oficial
+            oficiales += len(reportes_evento_oficial)
+            comunitarios += len(filas)
 
             segmentos.append(
                 SegmentFacts(
