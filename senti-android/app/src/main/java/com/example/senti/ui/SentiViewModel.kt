@@ -5,7 +5,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.senti.data.Api
 import com.example.senti.data.OfflineStore
-import com.example.senti.data.AlertaOffline
 import com.example.senti.data.Fuente
 import com.example.senti.data.Lugar
 import com.example.senti.data.PaqueteOffline
@@ -129,44 +128,7 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ── Modo demo ─────────────────────────────────────────────────────────
-    //
-    // TODO(quitar antes de mergear a `main`): sirve solo para revisar el
-    // rediseño de la interfaz mientras el servidor compartido está caído.
-    // Entra con datos de ejemplo fijos en el propio cliente, sin tocar la
-    // red. Cuando todo el equipo se una y el backend real esté disponible
-    // para probar, hay que borrar `modoDemo`, cada `if (modoDemo)` que lo usa,
-    // y las funciones `mensajesDemo`/`reportesDemo`/`paqueteDemo` de más abajo.
-    // No es una cuenta real ni un atajo de producción, y no tiene ningún
-    // rastro visible en la UI: es solo para quien prueba desde este código.
-    private var modoDemo = false
-
-    private fun esCredencialDemo(email: String, password: String) =
-        email.trim().equals("demo@senti.pe", ignoreCase = true) && password == "demo"
-
-    private fun activarModoDemo() {
-        modoDemo = true
-        _estado.update {
-            it.copy(
-                autenticado = true,
-                autenticando = false,
-                error = null,
-                sinConexion = false,
-                mensajes = mensajesDemo(),
-                reportes = reportesDemo(),
-                paquete = paqueteDemo(),
-                lat = -12.0464,
-                lon = -77.0428,
-                ubicacionPedida = true,
-            )
-        }
-    }
-
     fun iniciarSesion(email: String, password: String) = viewModelScope.launch {
-        if (esCredencialDemo(email, password)) {
-            activarModoDemo()
-            return@launch
-        }
         _estado.update { it.copy(autenticando = true, error = null) }
         runCatching { Api.login(email, password) }
             .onSuccess {
@@ -237,22 +199,6 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
                 enviando = true,
                 error = null,
             )
-        }
-
-        if (modoDemo) {
-            _estado.update {
-                it.copy(
-                    mensajes = it.mensajes + Mensaje(
-                        texto = "Esto es una respuesta de ejemplo del modo demo: no hay " +
-                            "servidor conectado, así que no se consultó ninguna fuente real.",
-                        esUsuario = false,
-                        urgencia = "verde",
-                        plantillaFija = true,
-                    ),
-                    enviando = false,
-                )
-            }
-            return@launch
         }
 
         runCatching {
@@ -375,17 +321,6 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
 
         _estado.update { it.copy(recalculandoRuta = true, sinRutaTrasMarcar = null) }
 
-        if (modoDemo) {
-            _estado.update {
-                it.copy(
-                    recalculandoRuta = false,
-                    sinRutaTrasMarcar = "Modo demo: no hay motor de rutas conectado. Esto " +
-                        "solo muestra cómo se ve el mapa, no una ruta real.",
-                )
-            }
-            return@launch
-        }
-
         // Varios toques sobre la misma zona no deben convertirse en varios
         // `exclude_locations`: Valhalla puede terminar cerrando todos los
         // accesos aunque el usuario solo haya señalado un bloqueo.
@@ -428,7 +363,6 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
     fun descartarAvisoSinRuta() = _estado.update { it.copy(sinRutaTrasMarcar = null) }
 
     fun marcarBloqueo(lat: Double, lon: Double) = viewModelScope.launch {
-        if (modoDemo) return@launch
         runCatching {
             Api.crearReporte(
                 tipo = "via_bloqueada",
@@ -463,33 +397,6 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         _estado.update { it.copy(reportando = true, error = null, reporteResultado = null) }
-
-        if (modoDemo) {
-            _estado.update { e ->
-                e.copy(
-                    reportando = false,
-                    reporteResultado = "Reporte de ejemplo añadido. Modo demo: no se envió " +
-                        "a ningún servidor.",
-                    reportes = listOf(
-                        ReporteResumen(
-                            id = "demo-nuevo-${e.reportes.size}",
-                            tipo = tipo,
-                            estado = "vigente",
-                            confianza = "probable",
-                            descripcion = descripcion,
-                            direccion = direccion,
-                            distrito = distrito,
-                            reportadoAt = "2026-08-01T10:00:00",
-                            lat = lat,
-                            lon = lon,
-                            mio = true,
-                        ),
-                    ) + e.reportes,
-                )
-            }
-            return@launch
-        }
-
         runCatching {
             Api.crearReporte(
                 tipo = tipo,
@@ -524,7 +431,6 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun sincronizarOffline() = viewModelScope.launch {
-        if (modoDemo) return@launch
         runCatching { Api.paqueteOffline() }
             .onSuccess { p ->
                 store.guardar(p)
@@ -556,9 +462,6 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Reportes vigentes de la zona (§21). */
     fun cargarReportes(lat: Double? = null, lon: Double? = null) = viewModelScope.launch {
-        // En demo ya están precargados en `activarModoDemo`; no hay servidor
-        // que consultar y `crearReporte` los añade localmente.
-        if (modoDemo) return@launch
         _estado.update { it.copy(cargandoReportes = true) }
         runCatching { Api.listarReportes(lat, lon) }
             .onSuccess { r ->
@@ -656,80 +559,3 @@ private fun distanciaMetros(a: Punto, b: Punto): Double {
     val dLon = (a.lon - b.lon) * 111_320.0 * cos(Math.toRadians((a.lat + b.lat) / 2.0))
     return (dLat.pow(2) + dLon.pow(2)).pow(0.5)
 }
-
-// ── Datos del modo demo ──────────────────────────────────────────────────
-//
-// Fijos y a la vista de que son de ejemplo: cubren los estados que las
-// pantallas necesitan mostrar (urgencia, fuentes, distintos niveles de
-// confianza) sin depender de que el servidor real esté arriba.
-
-private fun mensajesDemo(): List<Mensaje> = listOf(
-    Mensaje(
-        texto = "Está entrando agua a mi casa en Villa El Salvador",
-        esUsuario = true,
-    ),
-    Mensaje(
-        texto = "Aléjate de la zona baja y sube a un piso alto o al terreno elevado " +
-            "más cercano. No cruces corrientes de agua a pie ni en vehículo.",
-        esUsuario = false,
-        urgencia = "naranja",
-        fuentes = listOf(
-            Fuente(
-                institucion = "Municipalidad de Villa El Salvador (ejemplo)",
-                url = "https://munives.gob.pe",
-                confianza = "MUNICIPAL",
-                consultadaAt = "2026-08-01T09:40:00",
-                sha256 = "a3f9c2d8e17b4056",
-            ),
-        ),
-    ),
-    Mensaje(
-        texto = "Los teléfonos de emergencia son 115 Defensa Civil, 116 Bomberos y " +
-            "106 SAMU.",
-        esUsuario = false,
-        urgencia = "verde",
-        plantillaFija = true,
-    ),
-)
-
-private fun reportesDemo(): List<ReporteResumen> = listOf(
-    ReporteResumen(
-        id = "demo-1",
-        tipo = "inundacion",
-        estado = "vigente",
-        confianza = "confirmado",
-        descripcion = "Agua acumulada a la altura de la rodilla (ejemplo de demo).",
-        direccion = "Av. Los Héroes cuadra 12",
-        distrito = "Villa El Salvador",
-        reportadoAt = "2026-08-01T09:15:00",
-        lat = -12.0464,
-        lon = -77.0428,
-        mio = false,
-    ),
-    ReporteResumen(
-        id = "demo-2",
-        tipo = "via_bloqueada",
-        estado = "vigente",
-        confianza = "probable",
-        descripcion = "Reporte de ejemplo, todavía sin validar.",
-        direccion = "Puente Villa",
-        distrito = "Villa El Salvador",
-        reportadoAt = "2026-08-01T08:50:00",
-        lat = -12.05,
-        lon = -77.03,
-        mio = true,
-    ),
-)
-
-private fun paqueteDemo(): PaqueteOffline = PaqueteOffline(
-    sincronizadoAt = "2026-08-01T07:00:00",
-    telefonos = TextosFijos.TELEFONOS,
-    instruccionSinSenal = TextosFijos.SIN_SENAL,
-    ultimaAlerta = AlertaOffline(
-        titulo = "Alerta de ejemplo del modo demo",
-        nivel = "naranja",
-        entidad = "INDECI (ejemplo)",
-        fecha = "2026-08-01",
-        advertencia = "Esto es un dato de ejemplo, no una alerta real.",
-    ),
-)
