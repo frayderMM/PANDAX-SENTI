@@ -28,28 +28,41 @@ services:
         condition: service_healthy
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD:-senti}
+      PGUSER: ${POSTGRES_USER:-senti}
+      PGDATABASE: ${POSTGRES_DB:-senti}
+      EVOLUTION_DB: ${EVOLUTION_DB_NAME:-evolution}
       SENTI_EVOLUTION_API_KEY: ${SENTI_EVOLUTION_API_KEY:-}
     entrypoint: ["sh", "-c"]
-    # Aquí se comprueba también que hay llave de API, y no con un `:?` en la
-    # variable de Evolution: Compose interpola el archivo entero aunque el
-    # perfil no esté activo, así que un `:?` rompería `docker compose config`
-    # para todo el mundo —incluida la validación obligatoria del despliegue—
-    # solo por tener declarado un canal que quizá no se usa.
+    # El script va como UN elemento de lista con `|`, no como cadena suelta.
     #
-    # Como Evolution arranca con `service_completed_successfully` sobre este
-    # paso, fallar aquí lo deja sin arrancar. Que es lo que se quiere: sin
-    # llave, Evolution queda abierto a quien alcance el puerto.
-    command: >
-      set -e;
-      if [ -z "$$SENTI_EVOLUTION_API_KEY" ]; then
-        echo "FALTA SENTI_EVOLUTION_API_KEY en .env. Genérala con: openssl rand -hex 32" >&2;
-        exit 1;
-      fi;
-      psql -h db -U ${POSTGRES_USER:-senti} -d ${POSTGRES_DB:-senti} -tAc
-      "SELECT 1 FROM pg_database WHERE datname='${EVOLUTION_DB_NAME:-evolution}'"
-      | grep -q 1 ||
-      psql -h db -U ${POSTGRES_USER:-senti} -d ${POSTGRES_DB:-senti}
-      -c "CREATE DATABASE ${EVOLUTION_DB_NAME:-evolution}"
+    # No es cosmético: con `command:` en forma de cadena, Compose la parte por
+    # espacios y se la entrega a `sh -c` como argumentos sueltos. El primero
+    # pasa a ser el script y el resto, parámetros posicionales — de modo que
+    # `set -e; if …` ejecuta `set` a secas, que **imprime todo el entorno**,
+    # llave de API incluida, en el log del contenedor. Ocurrió.
+    #
+    # Aquí se comprueba además que hay llave, y no con un `${VAR:?}` en el
+    # servicio de Evolution: Compose interpola el archivo entero aunque el
+    # perfil esté apagado, así que un `:?` rompería `docker compose config`
+    # para todos —incluida la validación obligatoria del despliegue— solo por
+    # tener declarado un canal que quizá no se usa. Como Evolution depende de
+    # que este paso termine bien, fallar aquí lo deja sin arrancar, que es lo
+    # que se busca: sin llave queda abierto a quien alcance el puerto.
+    command:
+      - |
+        set -eu
+        if [ -z "${SENTI_EVOLUTION_API_KEY:-}" ]; then
+          echo "FALTA SENTI_EVOLUTION_API_KEY en .env. Genérala con: openssl rand -hex 32" >&2
+          exit 1
+        fi
+        existe=$$(psql -h db -U "$$PGUSER" -d "$$PGDATABASE" -tAc \
+          "SELECT 1 FROM pg_database WHERE datname='$$EVOLUTION_DB'")
+        if [ "$$existe" != "1" ]; then
+          psql -h db -U "$$PGUSER" -d "$$PGDATABASE" -c "CREATE DATABASE \"$$EVOLUTION_DB\""
+          echo "base $$EVOLUTION_DB creada"
+        else
+          echo "base $$EVOLUTION_DB ya existía"
+        fi
     restart: "no"
 
   evolution:
