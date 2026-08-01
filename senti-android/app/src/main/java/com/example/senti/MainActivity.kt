@@ -135,8 +135,13 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.ui.layout.ContentScale
 import com.example.senti.ui.Mensaje
 import com.example.senti.R
+import com.example.senti.data.MarcadorMapa
 import com.example.senti.data.SesionLocal
+import com.example.senti.data.TipoDesastre
+import com.example.senti.data.aMarcador
 import com.example.senti.data.formatearFechaHora
+import com.example.senti.data.tiposPresentes
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.example.senti.ui.MapaRuta
 import com.example.senti.ui.ModoOfflineViewModel
 import com.example.senti.ui.PantallaOffline
@@ -200,14 +205,6 @@ private fun etiquetaUrgencia(urgencia: String?): String = when (urgencia) {
     else -> ""
 }
 
-private fun etiquetaTipoReporte(tipo: String): String = when (tipo) {
-    "inundacion" -> "Inundación"
-    "huaico" -> "Huaico"
-    "via_bloqueada" -> "Vía bloqueada"
-    "sismo" -> "Sismo"
-    "otro" -> "Otro"
-    else -> tipo.replace("_", " ").replaceFirstChar { it.uppercase() }
-}
 
 private data class ImagenPreparada(val base64: String)
 
@@ -1068,13 +1065,52 @@ private fun ReportesMapa(
     LaunchedEffect(Unit) {
         runCatching { eventos = com.example.senti.data.Api.listarEventos().events }
     }
-    val ubicados = reportes.filter { it.lat != null && it.lon != null }
-    val eventosUbicados = eventos.filter { it.lat != null && it.lon != null }
-    val centro = eventosUbicados.firstOrNull()?.let { LatLng(it.lat!!, it.lon!!) }
-        ?: ubicados.firstOrNull()?.let { LatLng(it.lat!!, it.lon!!) }
+
+    // Eventos agregados y reportes ciudadanos se unifican para pintarlos, pero
+    // cada marcador conserva de dónde vino: la ficha lo dice y el §25 prohíbe
+    // presentarlos como lo mismo.
+    val marcadores = remember(reportes, eventos) {
+        eventos.mapNotNull { it.aMarcador() } + reportes.mapNotNull { it.aMarcador() }
+    }
+    val tipos = remember(marcadores) { marcadores.tiposPresentes() }
+
+    // Vacío significa "todos". Es distinto de "ninguno seleccionado": un filtro
+    // que empieza sin nada marcado enseñaría un mapa en blanco al abrir.
+    var tiposActivos by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var seleccion by remember { mutableStateOf<MarcadorMapa?>(null) }
+
+    val visibles = remember(marcadores, tiposActivos) {
+        if (tiposActivos.isEmpty()) marcadores else marcadores.filter { it.tipo in tiposActivos }
+    }
+
+    // Si el filtro deja fuera lo que había abierto, la ficha se cierra sola:
+    // dejarla mostraría el detalle de un punto que ya no está en el mapa.
+    LaunchedEffect(visibles) {
+        if (seleccion != null && visibles.none { it.id == seleccion!!.id }) seleccion = null
+    }
+
+    val centro = marcadores.firstOrNull()?.let { LatLng(it.lat, it.lon) }
+        ?: miLat?.let { la -> miLon?.let { lo -> LatLng(la, lo) } }
         ?: LatLng(-12.05, -77.04)
     val camara = rememberCameraPositionState {
-            position = CameraPosition.fromLatLngZoom(centro, if (eventosUbicados.isEmpty() && ubicados.isEmpty()) 12f else 6f)
+        position = CameraPosition.fromLatLngZoom(centro, if (marcadores.isEmpty()) 12f else 6f)
+    }
+
+    if (tipos.isNotEmpty()) {
+        FiltroTipos(
+            tipos = tipos,
+            activos = tiposActivos,
+            total = marcadores.size,
+            onAlternar = { codigo ->
+                tiposActivos = if (codigo in tiposActivos) {
+                    tiposActivos - codigo
+                } else {
+                    tiposActivos + codigo
+                }
+            },
+            onTodos = { tiposActivos = emptySet() },
+        )
+        Spacer(Modifier.height(10.dp))
     }
 
     Surface(
@@ -1084,36 +1120,235 @@ private fun ReportesMapa(
         shape = RoundedCornerShape(Radios.tarjetaGrande),
         shadowElevation = 3.dp,
     ) {
-        GoogleMap(
-            modifier = Modifier.fillMaxSize(),
-            cameraPositionState = camara,
-            uiSettings = MapUiSettings(
-                zoomControlsEnabled = false,
-                mapToolbarEnabled = false,
-            ),
+        Box {
+            GoogleMap(
+                modifier = Modifier.fillMaxSize(),
+                cameraPositionState = camara,
+                uiSettings = MapUiSettings(
+                    zoomControlsEnabled = false,
+                    mapToolbarEnabled = false,
+                ),
+                // Tocar el mapa fuera de un marcador cierra la ficha. No crea
+                // nada: publicar un reporte exige el formulario y su botón.
+                onMapClick = { seleccion = null },
+            ) {
+                if (miLat != null && miLon != null) {
+                    Marker(
+                        state = MarkerState(LatLng(miLat, miLon)),
+                        title = "Mi ubicación",
+                        snippet = "Tu ubicación actual",
+                        icon = BitmapDescriptorFactory.defaultMarker(
+                            BitmapDescriptorFactory.HUE_AZURE
+                        ),
+                    )
+                }
+                visibles.forEach { m ->
+                    Marker(
+                        state = MarkerState(LatLng(m.lat, m.lon)),
+                        title = m.titulo,
+                        snippet = m.etiquetaTipo,
+                        icon = BitmapDescriptorFactory.defaultMarker(matizDe(m.color)),
+                        onClick = {
+                            seleccion = m
+                            // Se consume el toque para que no salga además la
+                            // burbuja diminuta de Google: la ficha de abajo
+                            // dice lo mismo y cabe entera.
+                            true
+                        },
+                    )
+                }
+            }
+
+            seleccion?.let { m ->
+                FichaMarcador(
+                    marcador = m,
+                    onCerrar = { seleccion = null },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(12.dp),
+                )
+            }
+
+            if (visibles.isEmpty() && marcadores.isNotEmpty()) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                    shape = RoundedCornerShape(Radios.tarjeta),
+                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                ) {
+                    Text(
+                        "Ningún evento de ese tipo en tu zona. Que no aparezca no " +
+                            "significa que no exista: solo que no hay ninguno " +
+                            "registrado con esa clasificación.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(14.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Convierte el color del tipo al matiz que acepta el marcador de Google.
+ *
+ * `BitmapDescriptorFactory` solo admite un matiz de 0 a 360, no un color
+ * completo, así que se pasa el color a HSV y se toma la componente H. Se pierde
+ * saturación y brillo; el tono, que es lo que distingue un tipo de otro de un
+ * vistazo, se conserva.
+ */
+private fun matizDe(argb: Long): Float {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(argb.toInt(), hsv)
+    return hsv[0]
+}
+
+/**
+ * Filtro por tipo de desastre.
+ *
+ * Solo ofrece los tipos que hay en el mapa y enseña cuántos de cada uno. Un
+ * chip que al pulsarlo deja la pantalla vacía no es un filtro, es una pregunta
+ * sin respuesta.
+ */
+@Composable
+private fun FiltroTipos(
+    tipos: List<Pair<String, Int>>,
+    activos: Set<String>,
+    total: Int,
+    onAlternar: (String) -> Unit,
+    onTodos: () -> Unit,
+) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        item {
+            ChipTipo(
+                texto = "Todos ($total)",
+                color = MaterialTheme.colorScheme.primary,
+                seleccionado = activos.isEmpty(),
+                onClick = onTodos,
+            )
+        }
+        items(tipos) { (codigo, cuantos) ->
+            ChipTipo(
+                texto = "${com.example.senti.data.TipoDesastre.etiquetaDe(codigo)} ($cuantos)",
+                color = Color(com.example.senti.data.TipoDesastre.colorDe(codigo)),
+                seleccionado = codigo in activos,
+                onClick = { onAlternar(codigo) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChipTipo(
+    texto: String,
+    color: Color,
+    seleccionado: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        color = if (seleccionado) color.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(
+            if (seleccionado) 1.5.dp else 1.dp,
+            if (seleccionado) color else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+        ),
+        modifier = Modifier.clickable(onClick = onClick),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (miLat != null && miLon != null) {
-                Marker(
-                    state = MarkerState(LatLng(miLat, miLon)),
-                    title = "Mi ubicación",
-                    snippet = "Tu ubicación actual",
+            // El punto de color repite lo que dice el marcador en el mapa. El
+            // texto va siempre al lado: el color no es la información (§31.2).
+            Box(Modifier.size(9.dp).clip(CircleShape).background(color))
+            Spacer(Modifier.width(7.dp))
+            Text(
+                texto,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (seleccionado) FontWeight.SemiBold else FontWeight.Normal,
+            )
+        }
+    }
+}
+
+/**
+ * Ficha de un marcador tocado.
+ *
+ * Sustituye a la burbuja de Google, que recorta el texto a una línea y no cabe
+ * una descripción escrita por una persona. Lo que aquí importa además del qué
+ * es **de dónde viene**: un evento con respaldo oficial y un reporte ciudadano
+ * sin validar se leen distinto, y el §25 prohíbe presentarlos como lo mismo.
+ */
+@Composable
+private fun FichaMarcador(
+    marcador: MarcadorMapa,
+    onCerrar: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(Radios.tarjeta),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 8.dp,
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                Box(
+                    Modifier
+                        .padding(top = 5.dp)
+                        .size(11.dp)
+                        .clip(CircleShape)
+                        .background(Color(marcador.color))
                 )
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        marcador.titulo,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        marcador.etiquetaTipo,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color(marcador.color),
+                    )
+                }
+                IconButton(onClick = onCerrar, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Filled.Close, contentDescription = "Cerrar")
+                }
             }
-            eventosUbicados.forEach { evento ->
-                Marker(
-                    state = MarkerState(LatLng(evento.lat!!, evento.lon!!)),
-                    title = "[${evento.personas}] ${evento.title}",
-                    snippet = "${evento.personas} personas · ${evento.fuentesOficiales} fuentes oficiales · ${evento.estado}",
-                )
+
+            marcador.descripcion?.let {
+                Spacer(Modifier.height(9.dp))
+                Text(it, style = MaterialTheme.typography.bodySmall)
             }
-            ubicados.forEach { reporte ->
-                Marker(
-                    state = MarkerState(LatLng(reporte.lat!!, reporte.lon!!)),
-                    title = etiquetaTipoReporte(reporte.tipo),
-                    snippet = buildString {
-                        append(reporte.estado.replaceFirstChar { it.uppercase() })
-                        reporte.descripcion?.takeIf { it.isNotBlank() }?.let { append(" · $it") }
-                    },
+
+            Spacer(Modifier.height(10.dp))
+
+            // El origen, dicho con palabras y no solo con un color.
+            Text(
+                if (marcador.oficial) {
+                    "Confirmado por fuente oficial o municipal."
+                } else {
+                    "Reporte ciudadano. Todavía no ha sido validado."
+                },
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+                color = if (marcador.oficial) COLOR_ROJO else COLOR_AMARILLO,
+            )
+
+            val detalles = listOfNotNull(
+                marcador.confianza?.let { "Confianza: ${etiquetaConfianza(it)}" },
+                marcador.personas?.takeIf { it > 0 }?.let { "$it personas lo reportaron" },
+                marcador.fuentesOficiales?.takeIf { it > 0 }?.let { "$it fuentes oficiales" },
+                marcador.distrito,
+                marcador.fecha?.take(16)?.replace('T', ' '),
+            )
+            if (detalles.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    detalles.joinToString(" · "),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -1246,7 +1481,7 @@ private fun ListaReportes(
     reporteSeleccionado?.let { reporte ->
         AlertDialog(
             onDismissRequest = { reporteSeleccionado = null },
-            title = { Text(etiquetaTipoReporte(reporte.tipo)) },
+            title = { Text(TipoDesastre.etiquetaDe(reporte.tipo)) },
             text = {
                 Column {
                     Text(etiquetaConfianza(reporte.confianza), color = colorConfianza(reporte.confianza))
@@ -1297,7 +1532,7 @@ private fun TarjetaReporte(
             Column(Modifier.padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        etiquetaTipoReporte(r.tipo),
+                        TipoDesastre.etiquetaDe(r.tipo),
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.weight(1f),
                     )
@@ -1399,7 +1634,7 @@ private fun FormularioReporte(
             Spacer(Modifier.height(6.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(tipos) { t ->
-                    TipoReporteChip(etiquetaTipoReporte(t), tipo == t) { tipo = t }
+                    TipoReporteChip(TipoDesastre.etiquetaDe(t), tipo == t) { tipo = t }
                 }
             }
         }

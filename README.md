@@ -303,6 +303,22 @@ Tres consecuencias que hay que tener presentes:
 | **El mapa sin conexión es otro** | Google no cede sus teselas para uso local, así que el §26 no se sostiene con él. Lo resuelve MapLibre con teselas propias, en la sección siguiente |
 | **La clave nunca entra en git** | va en `local.properties`, restringida por paquete y huella SHA-1. Una clave commiteada la copia cualquiera que clone el repositorio |
 
+**El mapa de la zona se filtra por tipo y se toca para leer.** Los doce tipos
+de `HazardType` tienen nombre y color en el cliente (`TipoDesastre`), el filtro
+ofrece **solo los que hay en el mapa** con su recuento —un chip que al pulsarlo
+deja la pantalla vacía no es un filtro— y al tocar un marcador se abre una
+ficha con título, tipo, descripción, confianza y fecha.
+
+La ficha sustituye a la burbuja de Google, que recorta a una línea y no admite
+una descripción escrita por una persona. Y dice **de dónde viene cada punto**:
+un evento con respaldo oficial y un reporte ciudadano sin validar se leen
+distinto, porque el §25 prohíbe presentarlos como lo mismo. El color repite esa
+distinción pero nunca va solo (§31.2).
+
+Un tipo que el cliente no conozca —backend nuevo, app vieja— **se pinta
+igual**, con su código legible y color neutro. Descartar lo que no se sabe
+nombrar haría desaparecer del mapa un peligro real por un fallo de vocabulario.
+
 **Reportar no pide coordenadas.** El formulario lleva un mapa donde se toca
 para marcar el punto, y se puede volver a tocar para corregirlo. Antes había dos
 campos de latitud y longitud: nadie sabe las suyas, y pedírselas a quien está
