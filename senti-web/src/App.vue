@@ -249,70 +249,165 @@ function fecha(iso: string | null) {
 
 <template>
   <div class="shell">
+    <a class="salto-contenido" href="#contenido">Saltar al contenido</a>
     <header class="topbar">
-      <div class="brand">
+      <a class="brand" href="#inicio" aria-label="SENTI, volver al inicio">
         <img src="/senti-icono.png" alt="" />
         <div>
           <strong>SENTI</strong>
-          <small>Consulta pública</small>
+          <small>Información pública</small>
         </div>
-      </div>
-      <nav>
-        <a href="#actividad">Actividad</a>
+      </a>
+      <nav aria-label="Navegación principal">
+        <a href="#como-funciona">Cómo funciona</a>
+        <a href="#actividad">Mapa</a>
         <a href="#fuentes">Fuentes</a>
         <a href="#reportes">Reportes</a>
       </nav>
+      <a class="boton-cabecera" href="#reportes">Ver reportes</a>
     </header>
 
-    <main>
-      <section class="hero">
+    <main id="contenido">
+      <section id="inicio" class="hero">
         <div class="hero-texto">
-          <p class="kicker">Observatorio ciudadano</p>
-          <h1>Lo que está pasando ahora en tu zona</h1>
+          <p class="kicker"><span></span> Observatorio ciudadano de emergencias</p>
+          <h1>Información clara para actuar <em>a tiempo.</em></h1>
           <p class="lead">
-            Reportes vigentes de la comunidad y estado de las fuentes oficiales
-            que SENTI consulta. Sin identidad, sin ubicación exacta y sin fotos:
-            aquí solo se publica lo que puede verse sin señalar a nadie.
+            Consulta actividad reportada por la comunidad, revisa el estado de
+            las fuentes oficiales y entiende qué información ha sido verificada
+            antes de tomar una decisión.
           </p>
+          <div class="hero-acciones">
+            <a class="boton primario" href="#actividad">Explorar actividad</a>
+            <a class="boton secundario" href="#como-funciona">Conocer SENTI</a>
+          </div>
+          <ul class="garantias" aria-label="Principios de la consulta pública">
+            <li>Sin identidad pública</li>
+            <li>Sin ubicaciones exactas</li>
+            <li>Con fecha y nivel de confianza</li>
+          </ul>
         </div>
-        <div class="pulso" :class="{ cargando: loading }">
-          <span class="luz"></span>
-          <strong>{{ loading ? "Sincronizando" : "Datos vigentes" }}</strong>
-          <small>{{ consultedAt ? fecha(consultedAt) : "—" }}</small>
-        </div>
+        <aside class="estado-general" aria-label="Estado actual de SENTI">
+          <div class="estado-superior">
+            <span class="estado-icono" aria-hidden="true">◎</span>
+            <div>
+              <span class="eyebrow">Estado de la información</span>
+              <strong>{{ loading ? "Sincronizando datos" : "Consulta actualizada" }}</strong>
+            </div>
+            <span class="luz" :class="{ cargando: loading }"></span>
+          </div>
+          <div class="estado-cifra">
+            <strong>{{ visibles.length }}</strong>
+            <span>reportes vigentes en la consulta pública</span>
+          </div>
+          <div class="estado-fila">
+            <span>Fuentes operativas</span>
+            <strong>{{ fuentesOperativas }}/{{ fuentes.length || "—" }}</strong>
+          </div>
+          <div class="estado-fila">
+            <span>Última consulta</span>
+            <strong>{{ consultedAt ? fecha(consultedAt) : "Pendiente" }}</strong>
+          </div>
+          <p>Que no aparezca un reporte no significa que no exista peligro. Ante una emergencia, usa los canales oficiales.</p>
+        </aside>
       </section>
 
       <p v-if="error" class="aviso-error">{{ error }}</p>
 
-      <section id="actividad" class="metricas">
+      <section class="franja-emergencia" aria-label="Teléfonos de emergencia">
+        <div>
+          <span class="franja-icono" aria-hidden="true">!</span>
+          <p><strong>¿Hay peligro inmediato?</strong> No esperes una respuesta en esta página.</p>
+        </div>
+        <div class="telefonos-rapidos">
+          <a href="tel:116"><span>Bomberos</span><strong>116</strong></a>
+          <a href="tel:106"><span>SAMU</span><strong>106</strong></a>
+          <a href="tel:115"><span>Defensa Civil</span><strong>115</strong></a>
+        </div>
+      </section>
+
+      <section id="como-funciona" class="bloque-presentacion">
+        <header class="titulo-seccion">
+          <div>
+            <p class="kicker">Una red de información responsable</p>
+            <h2>SENTI conecta reportes ciudadanos con fuentes verificables</h2>
+          </div>
+          <p>
+            La inteligencia artificial ayuda a entender y redactar. Las reglas
+            del sistema validan permisos, ubicación, vigencia y nivel de confianza.
+          </p>
+        </header>
+        <div class="pasos">
+          <article>
+            <span class="numero-paso">01</span>
+            <div class="icono-paso" aria-hidden="true">◉</div>
+            <h3>Recibimos señales</h3>
+            <p>Reportes ciudadanos y consultas periódicas a instituciones especializadas.</p>
+          </article>
+          <article>
+            <span class="numero-paso">02</span>
+            <div class="icono-paso" aria-hidden="true">✓</div>
+            <h3>Verificamos contexto</h3>
+            <p>Se revisan fuente, fecha, zona, evidencia y coincidencia con otros registros.</p>
+          </article>
+          <article>
+            <span class="numero-paso">03</span>
+            <div class="icono-paso" aria-hidden="true">↗</div>
+            <h3>Publicamos con cuidado</h3>
+            <p>Mostramos información agregada, sin exponer personas, domicilios ni fotografías.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="actividad" class="seccion-datos">
+        <header class="titulo-seccion compacto">
+          <div>
+            <p class="kicker">Panorama actual</p>
+            <h2>Actividad reportada</h2>
+          </div>
+          <p>Los niveles indican cuánta verificación tiene cada reporte; no representan la gravedad del evento.</p>
+        </header>
+        <div class="metricas">
         <article class="metrica destacada">
           <span class="cifra">{{ visibles.length }}</span>
-          <span class="etiqueta">reportes vigentes</span>
+          <span class="etiqueta">Reportes vigentes</span>
+          <small>Total visible con los filtros actuales</small>
         </article>
         <article v-for="c in porConfianza" :key="c.nivel" class="metrica">
           <span class="cifra" :class="c.clase">{{ c.total }}</span>
           <span class="etiqueta">{{ c.etiqueta }}</span>
+          <small v-if="c.nivel === 'confirmado'">Comunicado por una autoridad</small>
+          <small v-else-if="c.nivel === 'validado'">Revisado con evidencia</small>
+          <small v-else-if="c.nivel === 'probable'">Coincidencias suficientes</small>
+          <small v-else>Aún requiere verificación</small>
         </article>
+        </div>
       </section>
 
-      <section id="mapa" class="tarjeta mapa-tarjeta">
+      <section id="mapa" class="tarjeta mapa-tarjeta tarjeta-elevada">
         <header class="cabecera">
           <div>
-            <h2>Actividad en el mapa</h2>
-            <p class="subtitulo">Concentración aproximada de reportes en los últimos 7 días</p>
+            <h2>Actividad aproximada en el mapa</h2>
+            <p class="subtitulo">Concentración de reportes durante los últimos 7 días</p>
           </div>
-          <small>celdas de 1 km</small>
+          <span class="etiqueta-mapa">Privacidad: celdas de 1 km</span>
         </header>
-        <div ref="mapaRef" class="mapa" role="img" aria-label="Mapa de actividad agregada de reportes"></div>
-        <p v-if="mapaError" class="aviso-error">{{ mapaError }}</p>
-        <p class="nota">Las áreas están agregadas para proteger la ubicación de las personas. No representan domicilios ni puntos exactos.</p>
+        <div class="mapa-contenedor">
+          <div ref="mapaRef" class="mapa" role="img" aria-label="Mapa de actividad agregada de reportes"></div>
+          <div v-if="mapaError" class="mapa-alternativo">
+            <span aria-hidden="true">⊙</span>
+            <strong>El mapa interactivo no está disponible</strong>
+            <p>La actividad por distrito y los reportes continúan disponibles.</p>
+          </div>
+        </div>
+        <p class="nota nota-privacidad">Las áreas están agregadas para proteger la ubicación de las personas. No representan domicilios ni puntos exactos.</p>
       </section>
 
       <div class="columnas">
-        <section class="tarjeta">
+        <section class="tarjeta tarjeta-elevada">
           <header class="cabecera">
             <h2>Dónde se concentra</h2>
-            <small>por distrito</small>
+            <small>Actividad relativa por distrito</small>
           </header>
           <p v-if="!porDistrito.length" class="vacio">Sin actividad registrada.</p>
           <ul v-else class="barras">
@@ -328,9 +423,12 @@ function fecha(iso: string | null) {
           </p>
         </section>
 
-        <section class="tarjeta">
+        <section class="tarjeta filtros-tarjeta">
           <header class="cabecera">
-            <h2>Filtros</h2>
+            <div>
+              <p class="kicker">Personaliza la vista</p>
+              <h2>Filtrar reportes</h2>
+            </div>
           </header>
           <label>
             Distrito
@@ -354,10 +452,13 @@ function fecha(iso: string | null) {
         </section>
       </div>
 
-      <section id="fuentes" class="tarjeta">
+      <section id="fuentes" class="tarjeta tarjeta-elevada fuentes-seccion">
         <header class="cabecera">
-          <h2>Fuentes oficiales</h2>
-          <small>{{ fuentesOperativas }} de {{ fuentes.length }} operativas</small>
+          <div>
+            <p class="kicker">Transparencia de origen</p>
+            <h2>Estado de las fuentes oficiales</h2>
+          </div>
+          <span class="contador-fuentes">{{ fuentesOperativas }} de {{ fuentes.length }} operativas</span>
         </header>
         <p class="nota">
           Cuando una fuente no responde, o todavía no se ha consultado, SENTI lo
@@ -374,10 +475,13 @@ function fecha(iso: string | null) {
         </ul>
       </section>
 
-      <section id="reportes" class="tarjeta">
+      <section id="reportes" class="tarjeta tarjeta-elevada reportes-seccion">
         <header class="cabecera">
-          <h2>Reportes recientes</h2>
-          <small>{{ visibles.length }} resultados</small>
+          <div>
+            <p class="kicker">Actividad de la comunidad</p>
+            <h2>Reportes recientes</h2>
+          </div>
+          <span class="contador-fuentes">{{ visibles.length }} resultados</span>
         </header>
         <p v-if="loading && !reports.length" class="vacio">Cargando…</p>
         <p v-else-if="!visibles.length" class="vacio">
@@ -404,6 +508,39 @@ function fecha(iso: string | null) {
         <p v-if="note" class="nota">{{ note }}</p>
       </section>
 
+      <section class="confianza-info">
+        <div>
+          <p class="kicker">Lee antes de actuar</p>
+          <h2>No todos los reportes significan lo mismo</h2>
+          <p>
+            SENTI muestra el nivel de confianza con texto y color. Un reporte
+            pendiente sirve como señal ciudadana, pero no equivale a una alerta oficial.
+          </p>
+        </div>
+        <ol>
+          <li><span class="nivel confirmado"></span><strong>Confirmado</strong><small>Publicado o ratificado por una autoridad.</small></li>
+          <li><span class="nivel validado"></span><strong>Validado</strong><small>Cuenta con evidencia revisada.</small></li>
+          <li><span class="nivel probable"></span><strong>Probable</strong><small>Coincide con otros reportes independientes.</small></li>
+          <li><span class="nivel pendiente"></span><strong>Sin confirmar</strong><small>Todavía no tiene evidencia suficiente.</small></li>
+        </ol>
+      </section>
+
+      <section class="preparacion">
+        <div class="preparacion-texto">
+          <p class="kicker">Prepararse también es responder</p>
+          <h2>Ten información esencial incluso cuando falle la conexión</h2>
+          <p>
+            SENTI permite conservar un paquete básico con teléfonos de emergencia,
+            plan familiar, checklist y la última alerta descargada con su fecha.
+          </p>
+        </div>
+        <ul class="preparacion-lista">
+          <li><span>01</span><div><strong>Define un punto de reunión</strong><small>Que toda tu familia pueda recordar.</small></div></li>
+          <li><span>02</span><div><strong>Guarda los teléfonos oficiales</strong><small>No dependas de una sola aplicación.</small></div></li>
+          <li><span>03</span><div><strong>Revisa la fecha de sincronización</strong><small>Una alerta guardada puede haber cambiado.</small></div></li>
+        </ul>
+      </section>
+
       <div v-if="reporteSeleccionado" class="modal-fondo" role="presentation" @click.self="reporteSeleccionado = null">
         <section class="modal-reporte" role="dialog" aria-modal="true" aria-labelledby="titulo-reporte">
           <button class="modal-cerrar" type="button" aria-label="Cerrar información" @click="reporteSeleccionado = null">×</button>
@@ -420,13 +557,24 @@ function fecha(iso: string | null) {
     </main>
 
     <footer>
-      <p>
+      <div class="footer-marca">
+        <div class="brand">
+          <img src="/senti-icono.png" alt="" />
+          <div><strong>SENTI</strong><small>Asistencia e información para emergencias</small></div>
+        </div>
+        <p>Información comprensible, verificable y respetuosa de la privacidad.</p>
+      </div>
+      <div class="footer-enlaces">
+        <strong>Explorar</strong>
+        <a href="#actividad">Actividad</a>
+        <a href="#fuentes">Fuentes</a>
+        <a href="#reportes">Reportes</a>
+      </div>
+      <div class="footer-aviso">
         <strong>SENTI no reemplaza al canal oficial del Estado.</strong>
-        El canal de alerta masiva del Perú es SISMATE (MTC e INDECI).
-      </p>
-      <p class="telefonos">
-        Emergencias: 115 Defensa Civil · 116 Bomberos · 106 SAMU
-      </p>
+        <p>El canal de alerta masiva del Perú es SISMATE (MTC e INDECI).</p>
+        <p class="telefonos">115 Defensa Civil · 116 Bomberos · 106 SAMU</p>
+      </div>
       <p class="creditos">Datos cartográficos © OpenStreetMap contributors.</p>
     </footer>
   </div>
