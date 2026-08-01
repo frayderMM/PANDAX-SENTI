@@ -227,6 +227,17 @@ data class RegistroRequest(
     val password: String,
     @SerialName("display_name") val displayName: String? = null,
     val municipality: String? = null,
+    /**
+     * §13.5. El número tiene dos destinos distintos y conviene no confundirlos.
+     *
+     * En `users` se guarda **seudonimizado** con HMAC de un solo sentido: sirve
+     * para reconocer a quien escribe por WhatsApp y darle su rol (§6), y no
+     * para escribirle. Si además marca [recibirAlertasWhatsapp], el número
+     * viaja aparte a `alert_subscribers`, recuperable, porque avisar por
+     * iniciativa propia exige poder marcar el número — y eso pide un
+     * consentimiento propio, explícito y revocable, no el hecho de haberlo
+     * tecleado al registrarse.
+     */
     val telefono: String? = null,
     @SerialName("recibir_alertas_whatsapp") val recibirAlertasWhatsapp: Boolean = false,
 )

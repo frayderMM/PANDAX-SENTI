@@ -12,6 +12,8 @@ import com.example.senti.data.PaqueteOffline
 import com.example.senti.data.Punto
 import com.example.senti.data.RutaCalculada
 import com.example.senti.data.ReporteResumen
+import com.example.senti.data.SesionLocal
+import com.example.senti.data.SesionSegura
 import com.example.senti.data.TextosFijos
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -108,10 +110,21 @@ data class SentiUiState(
 class SentiViewModel(app: Application) : AndroidViewModel(app) {
 
     private val store = OfflineStore(app)
+    private val sesionSegura = SesionSegura(app)
     private val _estado = MutableStateFlow(SentiUiState())
     val estado: StateFlow<SentiUiState> = _estado.asStateFlow()
 
     init {
+        // La sesión del último login se restaura ANTES que nada: sin esto,
+        // cerrar la app obligaba a escribir correo y contraseña otra vez, y
+        // eso en mitad de una emergencia, con lluvia y con prisa, es tiempo
+        // que no está. El token caducado no se restaura —no serviría contra
+        // el backend—, pero el modo sin conexión sí lo acepta y lo dice.
+        sesionSegura.leer()?.takeIf { !it.caducada() }?.let { s ->
+            Api.token = s.token
+            _estado.update { it.copy(autenticado = true) }
+        }
+
         viewModelScope.launch {
             // El paquete offline se carga ANTES de intentar la red: si no hay
             // cobertura, la app ya tiene algo que mostrar en vez de una
@@ -169,7 +182,8 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
         }
         _estado.update { it.copy(autenticando = true, error = null) }
         runCatching { Api.login(email, password) }
-            .onSuccess {
+            .onSuccess { token ->
+                guardarSesion(email, token)
                 _estado.update { e ->
                     e.copy(
                         autenticado = true,
@@ -202,7 +216,11 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
         runCatching {
             Api.registro(email, password, displayName, municipality, telefono, recibirAlertasWhatsapp)
         }
-            .onSuccess {
+            .onSuccess { token ->
+                // La sesión se persiste cifrada también al registrarse: quien
+                // acaba de crear la cuenta es justo quien todavía no tiene
+                // nada guardado para el modo sin conexión (§26).
+                guardarSesion(email, token)
                 _estado.update { e ->
                     e.copy(
                         autenticado = true,
@@ -431,25 +449,6 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
 
     fun descartarAvisoSinRuta() = _estado.update { it.copy(sinRutaTrasMarcar = null) }
 
-    fun marcarBloqueo(lat: Double, lon: Double) = viewModelScope.launch {
-        if (modoDemo) return@launch
-        runCatching {
-            Api.crearReporte(
-                tipo = "via_bloqueada",
-                descripcion = "Vía marcada como intransitable desde el mapa.",
-                lat = lat,
-                lon = lon,
-                direccionAproximada = null,
-                distrito = null,
-                fotoBase64 = null,
-            )
-        }.onFailure { e ->
-            _estado.update {
-                it.copy(error = "No se pudo enviar la marca: ${e.message ?: "sin conexión"}")
-            }
-        }
-    }
-
     fun crearReporte(
         tipo: String,
         descripcion: String,
@@ -635,6 +634,42 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
         // Se agotaron los intentos. No se inventa nada ni se borra el acuse: la
         // respuesta está en el servidor y aparecerá al reabrir el hilo.
         _estado.update { it.copy(esperandoDiferida = false) }
+    }
+
+    /**
+     * Persiste la sesión cifrada tras un login o registro correcto.
+     *
+     * Entra el correo —para poder decir de quién es la sesión guardada— y lo
+     * que devolvió el backend. **No entra la contraseña, y por eso no es un
+     * parámetro de esta función:** lo que no se recibe no se puede guardar por
+     * descuido más adelante.
+     */
+    private fun guardarSesion(email: String, token: com.example.senti.data.TokenResponse) {
+        val ahora = System.currentTimeMillis()
+        sesionSegura.guardar(
+            SesionLocal(
+                email = email,
+                token = token.accessToken,
+                rol = token.role,
+                expiraAt = ahora + token.expiresIn * 1000L,
+                guardadaAt = ahora,
+            )
+        )
+    }
+
+    /**
+     * Cierra la sesión.
+     *
+     * Borra el token y la sesión guardada; deja el paquete de zona y las guías
+     * donde están. Quien cierra sesión deja de ser ese usuario, no deja de
+     * estar en una zona con riesgo de huaico.
+     */
+    fun cerrarSesion() {
+        sesionSegura.borrar()
+        Api.token = null
+        _estado.update {
+            SentiUiState(paquete = it.paquete)
+        }
     }
 
     /** Ubicación del dispositivo, cuando el usuario la concede (§13.2). */
