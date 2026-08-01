@@ -135,7 +135,11 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.ui.layout.ContentScale
 import com.example.senti.ui.Mensaje
 import com.example.senti.R
+import com.example.senti.data.SesionLocal
+import com.example.senti.data.formatearFechaHora
 import com.example.senti.ui.MapaRuta
+import com.example.senti.ui.ModoOfflineViewModel
+import com.example.senti.ui.PantallaOffline
 import com.example.senti.ui.SentiViewModel
 import com.example.senti.ui.theme.SENTITheme
 import java.io.ByteArrayOutputStream
@@ -239,7 +243,33 @@ private fun decodificarImagen(context: Context, uri: Uri, maxDimension: Int): Bi
 @Composable
 fun PantallaSenti(modifier: Modifier = Modifier) {
     val vm: SentiViewModel = viewModel()
+    val offlineVm: ModoOfflineViewModel = viewModel()
     val estado by vm.estado.collectAsStateWithLifecycle()
+    val offline by offlineVm.estado.collectAsStateWithLifecycle()
+
+    // El modo sin conexión ocupa la app ENTERA y sale antes que cualquier otra
+    // cosa. No es una pestaña más ni una capa encima del resto: mientras está
+    // puesto no hay chat, ni reportes, ni perfil, ni barra inferior, porque
+    // ninguno de los tres puede funcionar sin servidor (§26).
+    if (offline.activo) {
+        BackHandler { offlineVm.salir() }
+        PantallaOffline(
+            paquete = offline.paquete,
+            motivoSinPaquete = offline.motivoSinPaquete,
+            guias = offline.guias,
+            packs = offline.packs,
+            miUbicacion = estado.lat?.let { la ->
+                estado.lon?.let { lo -> com.example.senti.data.Punto(la, lo) }
+            },
+            sincronizando = offline.sincronizando,
+            hayRed = offline.hayRed,
+            avisoSync = offline.avisoSync,
+            onSincronizar = { offlineVm.sincronizar(estado.lat, estado.lon) },
+            onSalir = { offlineVm.salir() },
+            modifier = modifier,
+        )
+        return
+    }
 
     if (!estado.autenticado) {
         PantallaAcceso(
@@ -250,11 +280,16 @@ fun PantallaSenti(modifier: Modifier = Modifier) {
             onRegistro = { email, pass, nombre, distrito ->
                 vm.registrar(email, pass, nombre, distrito)
             },
+            // Solo se ofrece si hubo un login online de verdad en este
+            // teléfono. Sin eso no hay nada que recuperar y el botón sería
+            // una promesa vacía (§26).
+            sesionGuardada = offline.sesion,
+            onEntrarSinConexion = { offlineVm.entrar() },
         )
         return
     }
 
-    PantallaPrincipal(modifier, vm, estado)
+    PantallaPrincipal(modifier, vm, estado, onModoSinConexion = { offlineVm.entrar() })
 }
 
 @Composable
@@ -262,6 +297,7 @@ private fun PantallaPrincipal(
     modifier: Modifier = Modifier,
     vm: SentiViewModel,
     estado: com.example.senti.ui.SentiUiState,
+    onModoSinConexion: () -> Unit,
 ) {
     var seccion by remember { mutableStateOf(SeccionPrincipal.CHAT) }
 
@@ -327,7 +363,12 @@ private fun PantallaPrincipal(
                 onCrearReporte = vm::crearReporte,
                 onCargarReportes = vm::cargarReportes,
             )
-            SeccionPrincipal.PERFIL -> PantallaPerfil(soloAbajo, estado)
+            SeccionPrincipal.PERFIL -> PantallaPerfil(
+                soloAbajo,
+                estado,
+                onModoSinConexion = onModoSinConexion,
+                onCerrarSesion = vm::cerrarSesion,
+            )
             SeccionPrincipal.CHAT -> PantallaChat(soloAbajo, vm, estado)
         }
     }
@@ -1482,6 +1523,8 @@ private fun TipoReporteChip(
 private fun PantallaPerfil(
     modifier: Modifier = Modifier,
     estado: com.example.senti.ui.SentiUiState,
+    onModoSinConexion: () -> Unit,
+    onCerrarSesion: () -> Unit,
 ) {
     Column(modifier.fillMaxSize()) {
         EncabezadoSenti(
@@ -1547,6 +1590,37 @@ private fun PantallaPerfil(
                     }
                 }
             }
+            item {
+                // La puerta de entrada al modo sin conexión. Está aquí y no en
+                // la barra inferior porque no es una sección más: es cambiar la
+                // app entera de modo, y eso no se toca sin querer.
+                Button(
+                    onClick = onModoSinConexion,
+                    shape = RoundedCornerShape(28.dp),
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.Map,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "Abrir el mapa sin conexión",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+            item {
+                OutlinedButton(
+                    onClick = onCerrarSesion,
+                    shape = RoundedCornerShape(28.dp),
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                ) {
+                    Text("Cerrar sesión", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
             estado.error?.let { item { AvisoError(it) } }
         }
     }
@@ -1605,6 +1679,8 @@ private fun PantallaAcceso(
     error: String?,
     onLogin: (String, String) -> Unit,
     onRegistro: (String, String, String?, String?) -> Unit,
+    sesionGuardada: SesionLocal? = null,
+    onEntrarSinConexion: () -> Unit = {},
 ) {
     var modoRegistro by remember { mutableStateOf(false) }
     var email by remember { mutableStateOf("") }
@@ -1805,6 +1881,41 @@ private fun PantallaAcceso(
                                 "Crear una cuenta"
                             },
                             style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+
+                    // §26: si ya hubo un login en este teléfono, se puede
+                    // entrar sin red. No se comprueba nada contra el servidor
+                    // —no habría con qué— y por eso solo lleva al mapa
+                    // descargado y a las guías, nunca al chat.
+                    if (sesionGuardada != null) {
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = onEntrarSinConexion,
+                            shape = RoundedCornerShape(28.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.CloudOff,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                "Entrar sin conexión",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Última sesión de ${sesionGuardada.email}, guardada el " +
+                                formatearFechaHora(sesionGuardada.guardadaAt) + ".",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
                         )
                     }
                 }

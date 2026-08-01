@@ -276,11 +276,19 @@ El aislamiento es **por conversación**, que es lo que separa un hilo de otro
 (§13.5). Nunca se mezcla lo que alguien dijo en otra conversación suya, y mucho
 menos en la de otra persona. Vale igual para la app y para WhatsApp.
 
-## El mapa lo dibuja Google, la ruta la decide SENTI
+## Dos mapas: Google con conexión, MapLibre sin ella
 
-La cartografía la pone **Google Maps** —SDK en Android, JavaScript en la web—.
-Antes se servían teselas propias generadas con Planetiler y publicadas por
-Martin; se quitó junto con MapLibre, el mapa base de 376 MB y los glifos.
+La cartografía **con conexión** la pone **Google Maps** —SDK en Android,
+JavaScript en la web—. La cartografía **sin conexión** la pone **MapLibre**
+sobre teselas de OpenStreetMap empaquetadas en el APK. No es una migración a
+medias: son los dos, cada uno donde el otro no llega, y el criterio que los
+separa es único —¿hay red?—.
+
+El reparto no es una preferencia estética. Las teselas de Google no se pueden
+descargar para usarlas fuera de línea; las de OpenStreetMap sí. Mientras hay
+cobertura gana Google, que tiene mejor cartografía urbana del Perú y no cuesta
+un byte de APK. Cuando no la hay, Google no puede dibujar nada y MapLibre es lo
+único que queda.
 
 Lo que **no** cambia es quién decide por dónde se va. Las rutas las sigue
 calculando Valhalla sobre las teselas de Perú, y el descarte duro del §20.2 lo
@@ -291,8 +299,8 @@ Tres consecuencias que hay que tener presentes:
 
 | | |
 |---|---|
-| **Depende de un tercero** | si se agota la cuota o cae el servicio, no hay mapa. Los pasos escritos siguen siendo la respuesta completa (§7.3), así que la pantalla se puede cerrar sin perder nada |
-| **Se acabó el mapa sin conexión** | las teselas propias se podían descargar por zona; las de Google no. Sin cobertura no hay mapa, y el §26 se sostiene solo con el paquete de texto |
+| **Depende de un tercero** | si se agota la cuota o cae el servicio, no hay mapa *con conexión*. Los pasos escritos siguen siendo la respuesta completa (§7.3), así que la pantalla se puede cerrar sin perder nada |
+| **El mapa sin conexión es otro** | Google no cede sus teselas para uso local, así que el §26 no se sostiene con él. Lo resuelve MapLibre con teselas propias, en la sección siguiente |
 | **La clave nunca entra en git** | va en `local.properties`, restringida por paquete y huella SHA-1. Una clave commiteada la copia cualquiera que clone el repositorio |
 
 **Reportar no pide coordenadas.** El formulario lleva un mapa donde se toca
@@ -389,6 +397,137 @@ El radio de un cierre se dibuja **en metros**, no en píxeles: al alejar el mapa
 el círculo sigue cubriendo la zona que representa. Con MapLibre había que
 construir el polígono a mano para conseguirlo. Un cierre dibujado más pequeño
 de lo que es invita a bordearlo por donde no se puede.
+
+## Modo sin conexión (§26)
+
+Es una pantalla que **ocupa la app entera**. Mientras está puesta no hay chat,
+ni reportes, ni perfil, ni barra de navegación inferior. No están escondidos:
+no existen. Los tres necesitan servidor —el chat llama al modelo, los reportes
+se publican, el perfil vive en la base de datos— y un botón que no puede
+funcionar durante una emergencia cuesta el tiempo de tocarlo y la confianza de
+descubrir que no hacía nada.
+
+Queda el mapa, la fecha de sincronización y cuatro botones: centrar ubicación,
+rutas guardadas, guías y salir.
+
+**Todo lo que hace falta viaja en el APK.** El modo sin conexión no llama a la
+API ni una vez; está comprobado por prueba, no por convención.
+
+### Las teselas
+
+Dos packs PMTiles, medidos sobre el basemap de Protomaps:
+
+| pack | cubre | zoom | peso | para qué sirve |
+|---|---|---:|---:|---|
+| `peru.pmtiles` | todo el país | 0–11 | 41 MB | ubicarse en cualquier sitio: carreteras, ríos, trazas urbanas |
+| `lima_callao.pmtiles` | área metropolitana | 0–15 | 23 MB | caminar por una calle concreta |
+
+El reparto sale de los números y no de una preferencia: el Perú entero hasta
+zoom 12 son 94 MB y hasta el 10 son 20, mientras que **el detalle de calle de
+toda el área metropolitana cabe en 23**. Subir un solo nivel de zoom en todo el
+país cuesta más que llevar completa la ciudad donde vive un tercio de la
+población.
+
+Fuera de Lima y Callao el mapa llega a carreteras y vías principales, no al
+nombre de la esquina — y **la pantalla lo dice** cuando detecta que estás
+fuera. Un mapa con límites declarados es utilizable; uno al que le faltan
+calles sin avisar manda a alguien por una vía que no existe.
+
+MapLibre lee los packs con `pmtiles://file://`, soportado desde su versión
+11.7. Los assets se declaran `noCompress`: un PMTiles ya viene comprimido por
+dentro y el formato entero se basa en pedir rangos de bytes sueltos, algo que
+de un asset comprimido no se puede hacer.
+
+**Los packs no se versionan.** `.gitignore` excluye `*.pmtiles` por la misma
+razón que excluye los extractos OSM: son datos generados y multiplicarían por
+diecisiete el tamaño del repositorio. Se reconstruyen con
+
+```bash
+./scripts/generar-teselas.sh
+```
+
+que los extrae por *range requests* contra el planeta público de Protomaps —no
+descarga el planeta, solo los bytes de los dos recuadros—. Sin ellos el APK se
+ensambla igual y la pantalla declara que el mapa base no está disponible en esa
+instalación; las guías y los teléfonos siguen funcionando. Es una degradación
+declarada, no un build roto.
+
+**El mapa sin conexión no dibuja nombres de calle**, y es una decisión. Pintar
+texto obliga a declarar `glyphs`, que son archivos que MapLibre descarga de un
+servidor: sin red no llegan. Se dibuja la geometría y los nombres se leen
+tocando cada punto.
+
+### El paquete de zona
+
+Se descarga con red, se lee sin ella, y cubre **10 km²** alrededor del usuario
+—un cuadrado de √10 km de lado— con lo que las fuentes ya publican: rutas ya
+calculadas, bloqueos y conflictos viales, reportes ciudadanos, recursos
+cercanos, teléfonos por región y la última alerta.
+
+| Garantía | Cómo |
+|---|---|
+| una actualización que falla no te deja peor | se escribe a un temporal, se valida y solo entonces se renombra: o está el viejo o está el nuevo |
+| un paquete a medias no se sirve a medias | SHA-256 del contenido; si no cuadra se descarta entero, no se aprovechan los campos legibles |
+| nada se presenta como actual | `sincronizado_at` viaja dentro y es lo que se muestra, nunca la hora del reloj |
+| lo viejo se declara viejo | vence a los 7 días —168 h, la vigencia más larga de la tabla de riesgos— y entonces la barra se pinta en rojo |
+| el silencio de una fuente no pasa por seguridad | lo que no se pudo descargar se guarda en `fuentes_fallidas` y la pantalla lo enseña (§11.3) |
+
+Los recursos —hospitales, bomberos, comisarías, refugios— salen de
+OpenStreetMap durante la sincronización, la misma fuente que usa el importador
+del backend. Se guardan como referenciales: acreditan que el establecimiento
+existe y dónde, no que esté abierto ni designado como punto de acogida.
+
+El mapa distingue por color el cierre oficial del reporte ciudadano sin
+validar, y **el color nunca va solo**: la ficha que se abre al tocar lo repite
+en palabras (§25, §31.2).
+
+### La sesión
+
+Tras un login online correcto se guarda una sesión cifrada con AES/GCM y clave
+en el Android Keystore. **La contraseña no está, y no es que se cifre: no
+existe el campo.** Lo que se guarda es el token que el backend ya emitió, que
+caduca solo y no sirve en ningún otro sitio. Un teléfono en una emergencia es
+justo el objeto que se pierde.
+
+Un token caducado no vale contra el backend pero **sí** deja entrar al modo sin
+conexión, que no consulta nada. Exigir un token vivo dejaría fuera del mapa a
+quien lleva tres días sin cobertura, que es la persona para la que se hizo
+esto.
+
+### Las guías
+
+Diez guías dentro del APK —mochila, inundación, huaico, incendio, derrumbe,
+evacuación, punto de reunión, falta de señal, primeros pasos y teléfonos—, cada
+una con institución, versión, fecha de compilación y acciones concretas. Se
+abren sin tocar la red y avisan cuando superan su vigencia de doce meses.
+
+Ninguna la redacta el modelo (§25). Cada una declara de dónde sale su texto:
+
+| origen | significa |
+|---|---|
+| `protocolo` | reproduce literal un protocolo versionado del sistema (§17) |
+| `texto_fijo` | reproduce literal un texto fijo del sistema (§7.5, §24.3) |
+| `resumen_local` | resume la recomendación pública de la institución citada |
+
+Distinguirlos no es burocracia: presentar los tres como lo mismo sería atribuir
+a INDECI una redacción que no es suya.
+
+### Marcar en el mapa no publica nada
+
+Un toque en cualquier mapa afecta a la ruta que estás mirando y a nada más. Un
+reporte se crea **solo** al pulsar «Enviar reporte», y hay una prueba que
+cuenta los puntos de llamada a `Api.crearReporte` para que siga siendo cierto:
+si alguien conecta un gesto del mapa a esa llamada, falla antes de que exista
+un APK. El §21.2 reserva el cierre de una vía al operador municipal; si un
+toque creara un reporte, cualquiera cerraría calles con el dedo.
+
+### Lo que cuesta
+
+El APK de depuración pesa **116,7 MB**: 64 de teselas y 34 del motor de
+MapLibre en tres arquitecturas (`arm64-v8a`, `armeabi-v7a`, `x86_64`; se
+descartó `x86`). Es mucho, y es el precio de que el mapa funcione en modo
+avión. Se puede bajar a unos 85 MB por APK con `splits` por arquitectura
+cuando haya que distribuirlo.
 
 ## Análisis con el modelo profundo (§15, §21.1)
 
