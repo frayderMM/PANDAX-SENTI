@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#
+# hola
 # Genera un .env con secretos nuevos.
 #
 # Solo necesita openssl: no depende de que el servidor tenga instalado el
