@@ -38,7 +38,7 @@ interface Fuente {
 
 interface MapaFeature {
   geometry: { coordinates: [number, number] };
-  properties: { reportes: number; peso: number };
+  properties: { reportes: number; peso: number; nivel: number };
 }
 
 const reports = ref<Report[]>([]);
@@ -160,17 +160,44 @@ async function cargarGoogleMaps() {
   });
   for (const feature of mapaFeatures.value) {
     const [lng, lat] = feature.geometry.coordinates;
+    const color = colorNivel(feature.properties.nivel);
+    const centro = { lat, lng };
+    const detalle = new google.maps.InfoWindow({
+      content: `<strong>${textoNivel(feature.properties.nivel)}</strong><br>${feature.properties.reportes} reporte(s) en esta celda agregada`,
+    });
     new google.maps.Circle({
       map: mapa,
-      center: { lat, lng },
+      center: centro,
       radius: Math.min(850, 250 + feature.properties.reportes * 100),
-      fillColor: "#16806b",
+      fillColor: color,
       fillOpacity: 0.25,
-      strokeColor: "#16806b",
+      strokeColor: color,
       strokeOpacity: 0.7,
       strokeWeight: 1,
-    });
+      clickable: true,
+    }).addListener("click", () => detalle.open({ map: mapa, position: centro, shouldFocus: false }));
+    new google.maps.Marker({
+      map: mapa,
+      position: centro,
+      title: `${textoNivel(feature.properties.nivel)}: ${feature.properties.reportes} reporte(s)`,
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 7,
+        fillColor: color,
+        fillOpacity: 1,
+        strokeColor: "#ffffff",
+        strokeWeight: 2,
+      },
+    }).addListener("click", () => detalle.open({ map: mapa, position: centro, shouldFocus: false }));
   }
+}
+
+function textoNivel(nivel: number) {
+  return nivel >= 4 ? "Confirmado por autoridad" : nivel === 3 ? "Validado con evidencia" : nivel === 2 ? "Probable" : "Sin confirmar";
+}
+
+function colorNivel(nivel: number) {
+  return nivel >= 4 ? "#c53932" : nivel === 3 ? "#d98a16" : nivel === 2 ? "#2f78c4" : "#718096";
 }
 
 onMounted(async () => {
@@ -395,6 +422,12 @@ function fecha(iso: string | null) {
           </div>
           <span class="etiqueta-mapa">Privacidad: celdas de 1 km</span>
         </header>
+        <div class="leyenda-mapa" aria-label="Colores de confianza de los reportes">
+          <span><i class="nivel-confirmado"></i>Confirmado</span>
+          <span><i class="nivel-validado"></i>Validado</span>
+          <span><i class="nivel-probable"></i>Probable</span>
+          <span><i class="nivel-pendiente"></i>Sin confirmar</span>
+        </div>
         <div class="mapa-contenedor">
           <div ref="mapaRef" class="mapa" role="img" aria-label="Mapa de actividad agregada de reportes"></div>
           <div v-if="mapaError" class="mapa-alternativo">

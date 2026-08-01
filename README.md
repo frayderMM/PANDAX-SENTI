@@ -327,6 +327,11 @@ un evento con respaldo oficial y un reporte ciudadano sin validar se leen
 distinto, porque el §25 prohíbe presentarlos como lo mismo. El color repite esa
 distinción pero nunca va solo (§31.2).
 
+En la web pública los reportes se muestran con privacidad por celdas de un
+kilómetro. Cada celda conserva el nivel de confianza más alto de sus reportes
+y usa el mismo código de color que Android; al tocarla se muestra el resumen
+agregado, nunca una coordenada individual.
+
 Un tipo que el cliente no conozca —backend nuevo, app vieja— **se pinta
 igual**, con su código legible y color neutro. Descartar lo que no se sabe
 nombrar haría desaparecer del mapa un peligro real por un fallo de vocabulario.
@@ -382,8 +387,10 @@ hospital puede estar lejos —7,7 km desde Surco, muy fuera del radio de «lo qu
 tengo al lado»—. El nombre manda sobre el tipo: si el modelo dedujo `refugio` y
 el usuario dijo «Rebagliati», exigir las dos cosas no encuentra nada.
 
-Para una petición genérica de «hospital más cercano», SENTI pregunta primero si
-se busca un hospital público, uno privado o una estación de bomberos. Los
+Para una petición genérica de «hospital más cercano», SENTI busca directamente
+el hospital validado más cercano, sin limitarlo al radio de 3 km. Si la persona
+aclara «público» o «privado», se conserva esa categoría y también se busca sin
+descartarlo por distancia. Los
 recursos importados desde OpenStreetMap solo reciben la categoría pública o
 privada cuando la fuente trae una señal explícita de titularidad; si no, se
 mantienen como centro de salud genérico y no se inventa su condición. Si se

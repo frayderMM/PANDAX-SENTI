@@ -393,6 +393,12 @@ def mapa_publico(
         (CitizenReport.trust_level == TrustLevel.PROBABLE, 2.0),
         else_=1.0,
     )
+    nivel = case(
+        (CitizenReport.trust_level == TrustLevel.CONFIRMADO, 4),
+        (CitizenReport.trust_level == TrustLevel.VALIDADO, 3),
+        (CitizenReport.trust_level == TrustLevel.PROBABLE, 2),
+        else_=1,
+    )
     celda = func.ST_SnapToGrid(CitizenReport.geom, lado, lado)
     filas = session.execute(
         select(
@@ -400,6 +406,7 @@ def mapa_publico(
             func.ST_Y(func.ST_Centroid(func.ST_Collect(CitizenReport.geom))).label("lat"),
             func.count(CitizenReport.id).label("reportes"),
             func.sum(peso).label("peso"),
+            func.max(nivel).label("nivel"),
         )
         .where(
             CitizenReport.reportado_at >= desde,
@@ -421,7 +428,11 @@ def mapa_publico(
             {
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [float(f.lon), float(f.lat)]},
-                "properties": {"reportes": int(f.reportes), "peso": float(f.peso)},
+                "properties": {
+                    "reportes": int(f.reportes),
+                    "peso": float(f.peso),
+                    "nivel": int(f.nivel),
+                },
             }
             for f in filas
         ],

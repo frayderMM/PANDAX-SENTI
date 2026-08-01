@@ -247,6 +247,7 @@ def consultar_perfil_hogar(ctx: ToolContext, _: SinArgs) -> ToolResult:
 # dentro del radio de "lo que tengo al lado" es no buscar.
 RADIO_BUSQUEDA_POR_NOMBRE_M = 50000.0
 TIPOS_SALUD = ("centro_salud", "hospital_publico", "hospital_privado")
+TIPOS_HOSPITAL = ("hospital_cualquiera", "hospital_publico", "hospital_privado")
 
 
 @herramienta(
@@ -260,16 +261,6 @@ TIPOS_SALUD = ("centro_salud", "hospital_publico", "hospital_privado")
 )
 def buscar_recursos_cercanos(ctx: ToolContext, args: RecursosArgs) -> ToolResult:
     punto = from_shape(Point(args.lon, args.lat), srid=SRID)
-    if args.tipo == "hospital_preguntar" and not args.nombre:
-        return ToolResult(
-            ok=True,
-            datos={"recursos": []},
-            ausencia=(
-                "¿Buscas un hospital público, un hospital privado o una estación "
-                "de bomberos? Indícame cuál y te muestro el más cercano."
-            ),
-        )
-
     condiciones = [
         Resource.disponible.is_(True),
         # §20.2: un destino no validado provoca descarte duro de la ruta.
@@ -284,11 +275,21 @@ def buscar_recursos_cercanos(ctx: ToolContext, args: RecursosArgs) -> ToolResult
         condiciones.append(Resource.nombre.ilike(f"%{args.nombre}%"))
         radio = max(args.radio_m, RADIO_BUSQUEDA_POR_NOMBRE_M)
     else:
-        condiciones.append(Resource.tipo == args.tipo)
-        radio = args.radio_m
-    condiciones.append(
-        func.ST_DWithin(Resource.geom.cast(GEOGRAPHY), cast(punto, GEOGRAPHY), radio)
-    )
+        if args.tipo == "hospital_cualquiera":
+            # La petición «cualquier hospital» no se limita a 3 km: se busca
+            # el más cercano entre todos los hospitales disponibles y
+            # validados que existan en el registro municipal.
+            condiciones.append(Resource.tipo.in_(TIPOS_SALUD))
+            radio = None
+        else:
+            condiciones.append(Resource.tipo == args.tipo)
+            # Para hospitales públicos/privados tampoco se debe afirmar que
+            # no existen solo porque estén fuera del radio de interfaz.
+            radio = None if args.tipo in TIPOS_HOSPITAL else args.radio_m
+    if radio is not None:
+        condiciones.append(
+            func.ST_DWithin(Resource.geom.cast(GEOGRAPHY), cast(punto, GEOGRAPHY), radio)
+        )
 
     stmt = (
         select(
@@ -349,13 +350,16 @@ def buscar_recursos_cercanos(ctx: ToolContext, args: RecursosArgs) -> ToolResult
                     f"que no exista: significa que no está en el registro."
                 ),
             )
+        etiqueta = (
+            "hospital" if args.tipo == "hospital_cualquiera"
+            else args.tipo.replace("_", " ")
+        )
         return ToolResult(
             ok=True,
             datos={"recursos": []},
             ausencia=(
-                f"No hay {args.tipo} validado registrado a menos de "
-                f"{args.radio_m / 1000:.1f} km. No significa que no exista: "
-                f"significa que el municipio no lo ha registrado."
+                f"No hay {etiqueta} validado registrado en el registro municipal. "
+                "No significa que no exista: significa que todavía no está registrado."
             ),
         )
 

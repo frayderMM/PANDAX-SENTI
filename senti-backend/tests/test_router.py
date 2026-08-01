@@ -92,7 +92,7 @@ class TestArgumentos:
             ("hospital público más cercano", "hospital_publico"),
             ("hospital privado más cercano", "hospital_privado"),
             ("bomberos más cercano", "bomberos"),
-            ("hospital más cercano", "hospital_preguntar"),
+            ("hospital más cercano", "hospital_cualquiera"),
         ],
     )
     def test_recursos_pide_o_aplica_tipo(self, texto: str, tipo: str) -> None:
@@ -108,6 +108,16 @@ class TestArgumentos:
         )
         assert args["tipo"] == "centro_salud"
         assert args["nombre"] == "rebagliati"
+
+    def test_recursos_conversa_la_aclaracion_sin_perder_la_peticion(self) -> None:
+        args = argumentos_por_defecto(
+            Intent.RECURSOS,
+            lat=-11.9,
+            lon=-76.7,
+            texto="cualquiera, el más cercano",
+            contexto_previo="Estoy herido, búscame un hospital",
+        )
+        assert args["tipo"] == "hospital_cualquiera"
 
     def test_consulta_telefono_no_se_manda_al_rag(self) -> None:
         assert rutear("¿Cuál es el número de emergencia de los bomberos?").intent is Intent.TELEFONOS

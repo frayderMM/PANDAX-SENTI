@@ -2953,14 +2953,14 @@ private fun AccionesRuta(
                     if (hayMapaPropio) {
                         onAbrirMapa()
                     } else {
-                        val etiqueta = Uri.encode(ruta.destino ?: "Destino")
-                        val geo = Uri.parse(
-                            "geo:${ruta.destinoLat},${ruta.destinoLon}" +
-                                "?q=${ruta.destinoLat},${ruta.destinoLon}($etiqueta)"
-                        )
-                        runCatching {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, geo))
-                        }
+                        val destino = "${ruta.destinoLat},${ruta.destinoLon}"
+                        val navegacion = Intent(
+                            Intent.ACTION_VIEW,
+                            "google.navigation:q=$destino&mode=w".toUri(),
+                        ).setPackage("com.google.android.apps.maps")
+                        val geo = Uri.parse("geo:$destino?q=$destino")
+                        runCatching { context.startActivity(navegacion) }
+                            .recoverCatching { context.startActivity(Intent(Intent.ACTION_VIEW, geo)) }
                     }
                 },
                 shape = RoundedCornerShape(22.dp),

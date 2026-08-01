@@ -213,8 +213,12 @@ def argumentos_por_defecto(
     if intent is Intent.ALERTA:
         return {"zona": distrito or ""}
     if intent is Intent.RECURSOS and lat is not None and lon is not None:
+        # Las respuestas cortas suelen continuar una petición anterior:
+        # «hospital más cercano» → «público» o «cualquiera». Mantener el
+        # contexto evita que el segundo mensaje vuelva a empezar la consulta.
+        texto_recursos = normalize(f"{contexto_previo or ''} {texto}")
         nombre = _nombre_recurso(texto)
-        argumentos = {"lat": lat, "lon": lon, "tipo": _tipo_recurso(texto)}
+        argumentos = {"lat": lat, "lon": lon, "tipo": _tipo_recurso(texto_recursos)}
         if nombre:
             argumentos["nombre"] = nombre
             # Un nombre concreto tiene prioridad sobre la pregunta pública/
@@ -253,7 +257,9 @@ def _tipo_recurso(texto: str) -> str:
             return "hospital_publico"
         if re.search(r"\bprivad[oa]s?\b|\bclinica\b|\bclínica\b|\nessalud\b", n):
             return "hospital_privado"
-        return "hospital_preguntar"
+        # «Cualquiera», «el más cercano» y una petición genérica de hospital
+        # deben resolver directamente al hospital validado más próximo.
+        return "hospital_cualquiera"
     if re.search(r"\brefugio\b|\balbergue\b", n):
         return "refugio"
     return "centro_salud"
