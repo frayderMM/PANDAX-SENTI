@@ -57,6 +57,7 @@ mensaje
 | confianza de un reporte | escalera §21.2 | `rules/trust.py` |
 | cobertura cartográfica | medición por distrito §20.4 | `routing/engine.py` |
 | fuente, hora, nivel oficial | backend | `rules/response.py` |
+| nivel de riesgo del tablero municipal | conteo de alertas críticas vigentes | `rules/municipal_dashboard.py` |
 | **redactar el texto** | **modelo** | `llm/` |
 
 ## Reglas duras
@@ -180,7 +181,7 @@ vacía basta con estar autenticado.
 | `POST /municipal/cierres/{id}/reabrir` | reapertura | `CONFIRMAR_CIERRE_VIA` |
 | `POST /municipal/recursos` | registra recurso oficial | `REGISTRAR_RECURSO` |
 | `POST /municipal/comunicados` | comunicado municipal | `PUBLICAR_COMUNICADO` |
-| `GET /municipal/tablero` | panel del operador | `PUBLICAR_COMUNICADO` |
+| `GET /municipal/tablero` | indicadores reales del panel municipal (§22), consumido por el Dashboard del operador y por `/info-general.html` | `PUBLICAR_COMUNICADO` |
 | `GET /municipal/mapa-calor` | GeoJSON **agregado por celda** (§22) | `PUBLICAR_COMUNICADO` |
 | `PUT /admin/usuarios/{id}/rol` | cambia el rol | `GESTIONAR_USUARIOS_Y_FUENTES` |
 | `POST /admin/parametros-riesgo` | versiona umbrales y pesos (§23) | `GESTIONAR_USUARIOS_Y_FUENTES` |
@@ -199,14 +200,23 @@ El acceso del portal municipal (`/login.html`) usa `POST /auth/login`; no simula
 una sesión en el navegador. El backend sigue siendo quien autentica y emite el
 token, y la interfaz solo permite continuar a los roles `operador_municipal` y
 `administrador`. Tras autenticarse, el portal abre `/admin.html#/dashboard`, el
-panel del operador (barra lateral con Dashboard y Alertas). Ese dashboard
-todavía trabaja con datos de ejemplo — clima, mapa de zona y métricas están
-pendientes de conectarse a Open-Meteo, Google Maps y al backend real.
+panel del operador (barra lateral con Dashboard y Alertas).
 
-El tablero con datos reales (`GET /municipal/tablero` y el mapa de calor
-agregado) sigue existiendo en `/info-general.html`: mismo `POST /auth/login`,
-pero sin token no muestra nada. Hoy es una pantalla aparte, no enlazada desde
-el panel del operador.
+El modelo de datos no tiene un concepto de "zona Centro/Norte/Sur": el piloto
+es un solo distrito (Lurigancho-Chosica), así que el Dashboard no simula una
+subdivisión que no existe — muestra el agregado real del municipio. Las
+tarjetas de resumen, "Últimas alertas" e "Incidencias recientes" vienen de
+`GET /municipal/tablero`; el nivel de riesgo y el color de cada alerta se
+clasifican en `rules/municipal_dashboard.py`, no en el frontend. El clima usa
+Open-Meteo directamente desde el navegador (sin backend propio, sin API key).
+Lo único que sigue siendo un mockup preparado para conectarse es el mapa de
+la zona (Google Maps real si existe `VITE_GOOGLE_MAPS_API_KEY`; si no,
+un esquema en SVG).
+
+El tablero con datos reales también sigue existiendo, sin cambios, en
+`/info-general.html` (mismo `GET /municipal/tablero`, mismo `POST
+/auth/login`): es una pantalla aparte, no enlazada desde el panel del
+operador, con su propio diseño.
 
 | Comprueba | Por qué ahí |
 |---|---|

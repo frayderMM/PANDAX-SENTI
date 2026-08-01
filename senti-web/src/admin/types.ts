@@ -18,8 +18,6 @@ export interface DocumentoAdjunto {
 
 // ---------------------------------------------------------------- dashboard
 
-export type ZonaId = "centro" | "norte" | "sur" | "este" | "oeste";
-
 export interface NivelRiesgo {
   etiqueta: "Bajo" | "Medio" | "Alto";
   detalle: string;
@@ -102,13 +100,4 @@ export interface ZonaMapaConfig {
   zoom: number;
   poligono: CoordenadaMapa[];
   marcadores: MarcadorMapa[];
-}
-
-export interface DatosZona {
-  id: ZonaId;
-  nombre: string;
-  resumen: ResumenZona;
-  alertas: AlertaResumen[];
-  incidencias: Incidencia[];
-  mapa: ZonaMapaConfig;
 }

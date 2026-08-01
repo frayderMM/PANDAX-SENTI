@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from geoalchemy2.shape import from_shape
@@ -12,7 +12,7 @@ from sqlalchemy import case, func, select, text
 from sqlalchemy.orm import Session
 
 from app.api.deps import auditar, db, exige, usuario_actual
-from app.core.security import Permission
+from app.core.security import Permission, Role
 from app.domain import ConfidenceLevel, HazardType, ReportState, SourceStatus, TrustLevel
 from app.models import (
     Alert,
@@ -24,6 +24,13 @@ from app.models import (
     User,
 )
 from app.models.base import SRID
+from app.rules.municipal_dashboard import (
+    color_alerta,
+    es_alerta_critica,
+    estado_incidencia,
+    nivel_riesgo_municipal,
+    texto_tipo_peligro,
+)
 
 router = APIRouter(prefix="/municipal", tags=["municipal"])
 
@@ -203,21 +210,67 @@ def publicar_comunicado(
     }
 
 
+_DISTRITO_PILOTO = "Lurigancho-Chosica"
+# Estados que no cuentan como incidencia activa ni entran al "últimas": un
+# borrador nunca se publicó, y un rechazado o duplicado ya se descartó.
+_REPORTES_EXCLUIDOS = (ReportState.RECHAZADO, ReportState.DUPLICADO, ReportState.BORRADOR)
+
+
+def _zona_alerta(alerta: Alert) -> str:
+    """Nombre de zona para mostrar. Sin `AlertZone` cargada, se asume el
+    distrito único del piloto en vez de dejar el campo vacío."""
+    zona = next(iter(alerta.zones), None)
+    if zona is None:
+        return _DISTRITO_PILOTO
+    return zona.distrito or zona.nombre or _DISTRITO_PILOTO
+
+
 @router.get("/tablero", dependencies=[Depends(exige(Permission.PUBLICAR_COMUNICADO))])
 def tablero(session: Session = Depends(db)) -> dict:
-    """§22, indicadores del panel municipal."""
+    """§22, indicadores del panel municipal.
+
+    Todo lo que se muestra en el Dashboard del operador viene de aquí: no hay
+    concepto de "zona Centro/Norte/Sur" en el modelo de datos —el piloto es
+    un solo distrito (Lurigancho-Chosica)—, así que el panel muestra el
+    agregado real del municipio en vez de simular una subdivisión que no
+    existe.
+    """
     ahora = datetime.now(UTC)
+    hace_7_dias = ahora - timedelta(days=7)
+    inicio_hoy = ahora.replace(hour=0, minute=0, second=0, microsecond=0)
 
     def contar(stmt) -> int:
         return session.scalar(stmt) or 0
 
     fuentes = list(session.scalars(select(OfficialSource).where(OfficialSource.activa.is_(True))))
 
+    alertas_vigentes = list(session.scalars(select(Alert).where(Alert.vigente.is_(True))))
+    alertas_criticas = sum(1 for a in alertas_vigentes if es_alerta_critica(a.nivel_oficial))
+    # "Moderadas" es todo lo vigente que no es crítico (incluye lo marcado
+    # "Verde" vigente, si lo hay): la suma de las dos siempre debe dar el
+    # total de activas que se muestra al lado.
+    alertas_moderadas = len(alertas_vigentes) - alertas_criticas
+    riesgo = nivel_riesgo_municipal(
+        alertas_criticas=alertas_criticas, alertas_activas=len(alertas_vigentes)
+    )
+
+    ultimas_alertas = session.scalars(
+        select(Alert).order_by(Alert.created_at.desc()).limit(6)
+    ).all()
+
+    incidencias = session.scalars(
+        select(CitizenReport)
+        .where(CitizenReport.estado.notin_(_REPORTES_EXCLUIDOS))
+        .order_by(CitizenReport.reportado_at.desc())
+        .limit(6)
+    ).all()
+
     return {
         "consultado_at": ahora.isoformat(),
-        "alertas_activas": contar(
-            select(func.count(Alert.id)).where(Alert.vigente.is_(True))
-        ),
+        "alertas_activas": len(alertas_vigentes),
+        "alertas_criticas": alertas_criticas,
+        "alertas_moderadas": alertas_moderadas,
+        "nivel_riesgo": {"etiqueta": riesgo.etiqueta, "detalle": riesgo.detalle},
         "reportes_pendientes": contar(
             select(func.count(CitizenReport.id)).where(
                 CitizenReport.estado == ReportState.PENDIENTE
@@ -226,6 +279,17 @@ def tablero(session: Session = Depends(db)) -> dict:
         "reportes_confirmados": contar(
             select(func.count(CitizenReport.id)).where(
                 CitizenReport.estado == ReportState.CONFIRMADO
+            )
+        ),
+        "reportes_totales": contar(
+            select(func.count(CitizenReport.id)).where(
+                CitizenReport.estado.notin_(_REPORTES_EXCLUIDOS)
+            )
+        ),
+        "reportes_hoy": contar(
+            select(func.count(CitizenReport.id)).where(
+                CitizenReport.estado.notin_(_REPORTES_EXCLUIDOS),
+                CitizenReport.reportado_at >= inicio_hoy,
             )
         ),
         "vias_bloqueadas": contar(
@@ -238,12 +302,41 @@ def tablero(session: Session = Depends(db)) -> dict:
                 Resource.validado.is_(True), Resource.disponible.is_(True)
             )
         ),
+        "ciudadanos_registrados": contar(
+            select(func.count(User.id)).where(User.role == Role.CIUDADANO)
+        ),
+        "ciudadanos_nuevos_semana": contar(
+            select(func.count(User.id)).where(
+                User.role == Role.CIUDADANO, User.created_at >= hace_7_dias
+            )
+        ),
         "estado_fuentes": {
             "ok": sum(1 for f in fuentes if f.ultimo_estado is SourceStatus.OK),
             "degradado": sum(1 for f in fuentes if f.ultimo_estado is SourceStatus.DEGRADADO),
             "caido": sum(1 for f in fuentes if f.ultimo_estado is SourceStatus.CAIDO),
             "obsoleto": sum(1 for f in fuentes if f.ultimo_estado is SourceStatus.OBSOLETO),
         },
+        "ultimas_alertas": [
+            {
+                "id": str(a.id),
+                "color": color_alerta(a.nivel_oficial),
+                "titulo": a.titulo,
+                "zona": _zona_alerta(a),
+                "hora": (a.vigencia_inicio or a.created_at).isoformat(),
+            }
+            for a in ultimas_alertas
+        ],
+        "incidencias_recientes": [
+            {
+                "id": str(r.id),
+                "tipo": r.tipo.value,
+                "titulo": texto_tipo_peligro(r.tipo),
+                "ubicacion": r.direccion_aproximada or r.distrito or _DISTRITO_PILOTO,
+                "hora": r.reportado_at.isoformat(),
+                "estado": estado_incidencia(r.estado),
+            }
+            for r in incidencias
+        ],
     }
 
 
