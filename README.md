@@ -641,6 +641,19 @@ plantillas aprobadas ni `phone_number_id`. La ventana de 24 h se respeta igual,
 porque es una regla de WhatsApp y no del proveedor: cada mensaje del ciudadano
 la reabre, y fuera de ella SENTI no inicia conversación.
 
+**La instancia es propia**, se levanta con el perfil `whatsapp` y su definición
+vive en [`whatsapp-api/`](whatsapp-api/README.md). Antes se apuntaba a una de un
+tercero, y por ese transporte pasan los mensajes de quien pide ayuda y su
+teléfono en claro: sostener el §13.5 dentro de SENTI mientras el transporte es
+de otro es sostenerlo a medias.
+
+Y por eso mismo Evolution se configura para **no archivar nada**. De fábrica
+guarda cada mensaje, contacto y chat en claro en su base; aquí se conserva solo
+la instancia —la sesión emparejada con el teléfono, sin la cual habría que
+reescanear el QR en cada reinicio—. Su base de datos es propia y separada de la
+de SENTI en el mismo Postgres: una migración suya no puede tocar las tablas del
+§27.
+
 ```
 Evolution ──► POST /webhooks/whatsapp
                 │  comprueba X-Senti-Token
