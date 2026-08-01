@@ -1,5 +1,11 @@
 # Lógica del sistema — SENTI
 
+## Licencia
+
+Este proyecto se distribuye bajo la [Apache License 2.0](LICENSE). El código
+original de SENTI puede usarse, modificarse y redistribuirse conforme a sus
+términos. Las dependencias de terceros conservan sus propias licencias.
+
 Contrato del sistema. Si el código no cumple esto, el código está mal.
 
 Las referencias `§n` apuntan a la especificación consolidada, que ya no vive en
