@@ -1,0 +1,38 @@
+/* Reseteo mínimo para la pantalla de login. No se reutiliza style.css porque
+   esa hoja pertenece a la vista pública (paleta verde, otro layout) y esta
+   pantalla es una entrada Vite independiente (login.html). */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-width: 320px;
+  overflow-x: hidden;
+}
+
+h1,
+h2,
+h3,
+p,
+form {
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
