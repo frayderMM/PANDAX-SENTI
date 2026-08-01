@@ -11,7 +11,7 @@ import { createRouter, createWebHashHistory } from "vue-router";
 export const router = createRouter({
   history: createWebHashHistory(),
   routes: [
-    { path: "/", redirect: "/alertas" },
+    { path: "/", redirect: "/dashboard" },
     {
       path: "/dashboard",
       name: "dashboard",
