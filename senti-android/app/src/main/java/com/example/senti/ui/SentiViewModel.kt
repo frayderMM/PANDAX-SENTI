@@ -195,9 +195,13 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
         password: String,
         displayName: String?,
         municipality: String?,
+        telefono: String? = null,
+        recibirAlertasWhatsapp: Boolean = false,
     ) = viewModelScope.launch {
         _estado.update { it.copy(autenticando = true, error = null) }
-        runCatching { Api.registro(email, password, displayName, municipality) }
+        runCatching {
+            Api.registro(email, password, displayName, municipality, telefono, recibirAlertasWhatsapp)
+        }
             .onSuccess {
                 _estado.update { e ->
                     e.copy(

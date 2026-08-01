@@ -85,6 +85,11 @@ MIGRACIONES = (
     "UPDATE official_sources SET activa = FALSE WHERE slug IN "
     "('ana-geosnirh', 'igp-ultimo-sismo', 'ingemmet-geocatmin', 'senamhi-avisos', "
     "'sutran-alertas', 'sigrid-cenepred', 'dihidronav-cnat', 'coen-indeci')",
+    # §13.4: nueva finalidad de consentimiento para alertas por WhatsApp.
+    # SQLAlchemy guarda el `.name` del enum de Python en el tipo de Postgres,
+    # no el `.value` (así quedó creado `consent_purpose` desde el principio;
+    # ver `ALTER TYPE urgency_level` arriba para el mismo caso con NEGRO).
+    "ALTER TYPE consent_purpose ADD VALUE IF NOT EXISTS 'ALERTAS_WHATSAPP'",
 )
 
 

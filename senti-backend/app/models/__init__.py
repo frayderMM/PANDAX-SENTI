@@ -18,7 +18,7 @@ from app.models.enums_sa import (  # noqa: F401  (registra los tipos ENUM)
     trust_level_enum,
     urgency_enum,
 )
-from app.models.alerts import Alert, AlertZone, MunicipalNotice
+from app.models.alerts import Alert, AlertSubscriber, AlertZone, MunicipalNotice
 from app.models.assist import (
     Conversation,
     FamilyPlan,
@@ -42,6 +42,7 @@ __all__ = [
     "SRID",
     "AffectedRoad",
     "Alert",
+    "AlertSubscriber",
     "AlertZone",
     "AuditLog",
     "Base",

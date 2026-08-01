@@ -65,10 +65,17 @@ object Api {
         password: String,
         displayName: String? = null,
         municipality: String? = null,
+        telefono: String? = null,
+        recibirAlertasWhatsapp: Boolean = false,
     ): TokenResponse {
         val respuesta: TokenResponse = client.post("$baseUrl/auth/registro") {
             contentType(ContentType.Application.Json)
-            setBody(RegistroRequest(email, password, displayName, municipality))
+            setBody(
+                RegistroRequest(
+                    email, password, displayName, municipality,
+                    telefono, recibirAlertasWhatsapp,
+                ),
+            )
         }.body()
         token = respuesta.accessToken
         return respuesta
@@ -220,6 +227,8 @@ data class RegistroRequest(
     val password: String,
     @SerialName("display_name") val displayName: String? = null,
     val municipality: String? = null,
+    val telefono: String? = null,
+    @SerialName("recibir_alertas_whatsapp") val recibirAlertasWhatsapp: Boolean = false,
 )
 
 @Serializable

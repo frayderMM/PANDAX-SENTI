@@ -13,7 +13,7 @@ from app.api.deps import auditar, db, usuario_actual
 from app.core.crypto import pseudonymize_phone
 from app.core.security import Role, create_access_token, hash_password, verify_password
 from app.domain import ConsentPurpose
-from app.models import Consent, User
+from app.models import AlertSubscriber, Consent, User
 from app.rules.fixed_responses import CONSENTIMIENTO_VERSION, CONSENTIMIENTO_WHATSAPP
 
 router = APIRouter(prefix="/auth", tags=["identidad"])
@@ -35,6 +35,11 @@ class RegistroEntrada(BaseModel):
     # §6: el rol lo asigna el administrador. El registro público solo crea
     # ciudadanos; permitir elegirlo aquí sería una escalada de privilegios.
     municipality: str | None = None
+    # Consentimiento explícito y aparte del checkbox de mensajería: aceptar
+    # que SENTI guarde el teléfono en claro para escribir por iniciativa
+    # propia es una finalidad distinta a que conteste cuando el ciudadano
+    # escribe primero (§13.4).
+    recibir_alertas_whatsapp: bool = False
 
 
 class LoginEntrada(BaseModel):
@@ -59,11 +64,19 @@ def registro(datos: RegistroEntrada, request: Request, session: Session = Depend
     if session.scalar(select(User).where(User.email == datos.email)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Ese correo ya está registrado")
 
+    if datos.recibir_alertas_whatsapp and not (datos.telefono and datos.municipality):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Para recibir alertas por WhatsApp hacen falta teléfono y distrito (§13.4)",
+        )
+
     user = User(
         email=datos.email,
         password_hash=hash_password(datos.password),
         display_name=datos.display_name,
-        # §13.5: el número se guarda seudonimizado, nunca en claro.
+        # §13.5: el número se guarda seudonimizado, nunca en claro. Esto no
+        # cambia aunque haya alertas de WhatsApp: ese consentimiento vive
+        # aparte, en `AlertSubscriber`, con el teléfono real.
         phone_pseudonym=pseudonymize_phone(datos.telefono) if datos.telefono else None,
         role=Role.CIUDADANO,
         municipality=datos.municipality,
@@ -73,6 +86,31 @@ def registro(datos: RegistroEntrada, request: Request, session: Session = Depend
 
     auditar(session, request, actor=user, accion="auth.registro", entidad="user",
             entidad_id=str(user.id))
+
+    if datos.recibir_alertas_whatsapp:
+        ahora = datetime.now(UTC)
+        session.add(
+            Consent(
+                user_id=user.id,
+                purpose=ConsentPurpose.ALERTAS_WHATSAPP,
+                granted=True,
+                granted_at=ahora,
+                notice_version=CONSENTIMIENTO_VERSION,
+                notice_text=_DESCRIPCION_FINALIDAD[ConsentPurpose.ALERTAS_WHATSAPP],
+            )
+        )
+        session.add(
+            AlertSubscriber(
+                user_id=user.id,
+                nombre=datos.display_name,
+                telefono=datos.telefono,
+                distrito=datos.municipality,
+                activo=True,
+            )
+        )
+        auditar(session, request, actor=user, accion="alertas_whatsapp.suscribir",
+                entidad="alert_subscriber", entidad_id=str(user.id),
+                detalle={"distrito": datos.municipality})
 
     from app.core.config import settings
 
@@ -158,6 +196,11 @@ _DESCRIPCION_FINALIDAD = {
     ConsentPurpose.CONTACTO_CONFIANZA: (
         "Guardar cifrado el teléfono de tu contacto. Nunca le escribimos sin que tú lo pidas."
     ),
+    ConsentPurpose.ALERTAS_WHATSAPP: (
+        "Guardar tu teléfono en claro, junto a tu distrito, para avisarte por "
+        "WhatsApp cuando haya una alerta oficial de tu zona. A diferencia de "
+        "las demás finalidades, esta permite que SENTI te escriba primero."
+    ),
 }
 
 
@@ -189,6 +232,19 @@ def registrar_consentimiento(
     consent.granted_at = ahora if datos.granted else consent.granted_at
     consent.revoked_at = None if datos.granted else ahora
 
+    # ALERTAS_WHATSAPP aquí no solo anota el consentimiento: apaga o prende
+    # el envío real (§13.4, revocable). Revocar desactiva toda suscripción
+    # existente; volver a otorgar reactiva la que ya tenía teléfono y
+    # distrito, sin pedirlos otra vez —este endpoint no los recibe—. Si
+    # nunca hubo una (`registro` es el único que la crea, con consentimiento
+    # inicial), no hay nada que reactivar.
+    if datos.purpose is ConsentPurpose.ALERTAS_WHATSAPP:
+        suscripciones = session.scalars(
+            select(AlertSubscriber).where(AlertSubscriber.user_id == user.id)
+        )
+        for suscripcion in suscripciones:
+            suscripcion.activo = datos.granted
+
     auditar(session, request, actor=user, accion="consentimiento.actualizar",
             entidad="consent", entidad_id=datos.purpose.value,
             detalle={"granted": datos.granted})
@@ -203,6 +259,11 @@ def mis_datos(session: Session = Depends(db), user: User = Depends(usuario_actua
     from app.rules.retention import AvisoRetencion
 
     consents = list(session.scalars(select(Consent).where(Consent.user_id == user.id)))
+    suscripcion_activa = session.scalar(
+        select(AlertSubscriber).where(
+            AlertSubscriber.user_id == user.id, AlertSubscriber.activo.is_(True)
+        )
+    )
     return {
         "retencion": AvisoRetencion.completo().render(),
         "consentimientos": [
@@ -214,5 +275,10 @@ def mis_datos(session: Session = Depends(db), user: User = Depends(usuario_actua
             }
             for c in consents
         ],
-        "telefono": "seudonimizado con hash; el número no se conserva",
+        "telefono": (
+            f"guardado en claro para avisarte por WhatsApp de alertas en "
+            f"{suscripcion_activa.distrito}; revócalo con ALERTAS_WHATSAPP en /auth/consentimiento"
+            if suscripcion_activa
+            else "seudonimizado con hash; el número no se conserva"
+        ),
     }
