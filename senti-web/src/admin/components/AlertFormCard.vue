@@ -15,13 +15,21 @@ const emit = defineEmits<{
 
 const form = defineModel<AlertaForm>({ required: true });
 
+// Mismo enum que HazardType en senti-backend/app/domain.py, completo: si le
+// falta un valor, la propuesta de Gemma puede traer un tipo que no está en
+// esta lista y el <select> se queda sin nada seleccionado, en silencio.
 const TIPOS_EVENTO = [
   { value: "inundacion", label: "Inundación" },
   { value: "huaico", label: "Huaico" },
   { value: "deslizamiento", label: "Deslizamiento" },
+  { value: "lluvia", label: "Lluvia intensa" },
   { value: "sismo", label: "Sismo" },
+  { value: "tsunami", label: "Tsunami" },
   { value: "incendio", label: "Incendio" },
   { value: "via_bloqueada", label: "Vía bloqueada" },
+  { value: "puente_afectado", label: "Puente afectado" },
+  { value: "acumulacion_agua", label: "Acumulación de agua" },
+  { value: "caida_poste", label: "Caída de poste" },
   { value: "otro", label: "Otro" },
 ];
 

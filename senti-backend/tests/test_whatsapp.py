@@ -27,6 +27,28 @@ class TestNumero:
         assert normalizar_numero(entrada) == esperado
 
     @pytest.mark.parametrize(
+        ("entrada", "esperado"),
+        [
+            ("925650163", "51925650163"),
+            ("925297709", "51925297709"),
+            ("973791546", "51973791546"),
+        ],
+    )
+    def test_un_celular_peruano_sin_codigo_de_pais_lo_recibe(
+        self, entrada: str, esperado: str
+    ) -> None:
+        """`AlertSubscriber.telefono` se guarda tal como lo escribe la persona
+        al registrarse: "925650163", no "51925650163". Sin este paso, Evolution
+        recibe 9 dígitos que no resuelven a ningún JID y el mensaje no llega —
+        sin que el envío lance ningún error que lo delate."""
+        assert normalizar_numero(entrada) == esperado
+
+    def test_un_numero_de_9_digitos_que_no_empieza_en_9_no_se_toca(self) -> None:
+        # Todo celular peruano empieza en 9; esto no es uno, así que no se
+        # inventa un país que nadie pidió.
+        assert normalizar_numero("812345678") == "812345678"
+
+    @pytest.mark.parametrize(
         "jid",
         [
             "51925650163@s.whatsapp.net",
