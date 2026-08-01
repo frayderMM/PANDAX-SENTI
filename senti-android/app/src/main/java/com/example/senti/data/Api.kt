@@ -117,9 +117,9 @@ object Api {
     /**
      * Recalcula la ruta esquivando lo que el usuario marcó en el mapa.
      *
-     * Los puntos valen para esta petición y para nadie más: no cierran la vía
-     * (§6, §21.2). El reporte que se manda en paralelo sigue su camino normal
-     * y entra sin confirmar.
+     * Los puntos valen solo para esta petición y para nadie más: no cierran la
+     * vía ni crean un reporte (§6, §21.2). Para publicar un reporte hay que
+     * usar explícitamente el formulario correspondiente.
      */
     suspend fun recalcularRuta(
         origenLat: Double,
@@ -258,6 +258,8 @@ data class Lugar(
     @SerialName("distancia_m") val distanciaM: Int? = null,
     val lat: Double,
     val lon: Double,
+    val tipo: String? = null,
+    val sugerido: Boolean = false,
     // OSM acredita que existe y dónde, no que el municipio lo haya designado
     // ni que esté abierto. Quien lo lea tiene derecho a saberlo.
     @SerialName("ubicacion_referencial") val ubicacionReferencial: Boolean = false,
@@ -276,6 +278,7 @@ data class ChatResponse(
     val advertencias: List<String> = emptyList(),
     val ruta: RutaCalculada? = null,
     val lugar: Lugar? = null,
+    @SerialName("lugar_sugerido") val lugarSugerido: Lugar? = null,
     // §29: amarillo y verde reciben acuse y el worker calcula la respuesta
     // aparte. Si esto viene a true, lo que se acaba de mostrar no es la
     // respuesta final: falta recogerla del hilo.

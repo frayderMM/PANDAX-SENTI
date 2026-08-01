@@ -85,6 +85,9 @@ class MensajeSalida(BaseModel):
     ruta: dict | None = None
     # Lugar encontrado (nombre, dirección, lat, lon) para abrirlo en el mapa.
     lugar: dict | None = None
+    # Si se pidió un establecimiento concreto, el más cercano se entrega como
+    # sugerencia aparte; nunca reemplaza silenciosamente al solicitado.
+    lugar_sugerido: dict | None = None
     # §29: hay una respuesta más completa en camino.
     respuesta_diferida_en_curso: bool = False
     # §7.4: el backend midió una latencia que aconseja degradar el canal. El
@@ -293,6 +296,7 @@ def conversar(
         motivo_modo_ligero=salida.motivo_modo_ligero,
         ruta=salida.ruta,
         lugar=salida.lugar,
+        lugar_sugerido=salida.lugar_sugerido,
     )
 
 

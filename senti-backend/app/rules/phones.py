@@ -6,12 +6,16 @@ caliente va contra la tabla, no contra este módulo.
 
 El módulo existe igual porque el §26 exige que los teléfonos por región estén
 disponibles sin conexión y el §29 exige que el nivel rojo responda con el
-modelo apagado — y, en el peor caso, también con la base de datos caída.
+modelo apagado — y, en el peor caso, también con la base de datos caída. La
+numeración nacional se verificó en el directorio oficial de la PCM y en las
+páginas de PNP, Minsa, Bomberos y EsSalud: https://www.gob.pe/547-telefonos-de-emergencia.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
+import unicodedata
 
 REGION_NACIONAL = "PE"
 REGION_LIMA_CALLAO = "PE-LIM"
@@ -72,3 +76,40 @@ def render(region: str | None = None, *, abreviado: bool = False) -> str:
     if abreviado:
         return " · ".join(f"{c.numero} {c.entidad}" for c in contactos[:4])
     return "\n".join(f"{c.situacion}: {c.numero} ({c.entidad})" for c in contactos)
+
+
+def render_consulta(texto: str, region: str | None = None) -> str:
+    """Responde una consulta telefónica con la tabla verificada.
+
+    Estas preguntas no deben pasar por embeddings: un documento sobre mochila
+    puede mencionar "teléfonos" y ganar semánticamente aunque no responda qué
+    número pidió la persona. La tabla de teléfonos es la fuente determinista.
+    """
+    normalizado = "".join(
+        c for c in unicodedata.normalize("NFD", texto.lower())
+        if unicodedata.category(c) != "Mn"
+    )
+    contactos = para_region(region)
+    patrones = {
+        "bomberos": r"\bbomber[oa]s?\b",
+        "policia": r"\bpolicia\b|\bpnp\b",
+        "samu": r"\bsamu\b|\bmedic[ao]\b|\bsalud\b",
+        "defensa civil": r"\bdefensa civil\b|\bindeci\b",
+        "sutran": r"\bsutran\b|\bcarretera\b|\bsocorro vial\b",
+        "essalud": r"\bessalud\b|\basegurad[oa]s?\b",
+    }
+    seleccionados = [
+        contacto
+        for contacto in contactos
+        if any(
+            re.search(patron, normalizado)
+            and (clave in contacto.entidad.lower() or clave in contacto.situacion.lower())
+            for clave, patron in patrones.items()
+        )
+    ]
+    if not seleccionados:
+        return "Teléfonos oficiales de emergencia:\n" + render(region)
+    return "\n".join(
+        f"{contacto.situacion}: {contacto.numero} ({contacto.entidad})"
+        for contacto in seleccionados
+    )

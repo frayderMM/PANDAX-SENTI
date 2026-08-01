@@ -52,6 +52,7 @@ from app.orchestrator.tools import (
 )
 from app.rules import fixed_responses as fx
 from app.rules import light_mode
+from app.rules import phones
 from app.rules.response import (
     LanguageViolation,
     Respuesta,
@@ -59,7 +60,7 @@ from app.rules.response import (
     exigir_lenguaje_admisible,
     limitar_salida_modelo,
 )
-from app.rules.urgency import StructuralSignals, UrgencyAssessment, classify
+from app.rules.urgency import StructuralSignals, UrgencyAssessment, classify, normalize
 
 logger = logging.getLogger(__name__)
 
@@ -125,9 +126,27 @@ def _primer_lugar(datos: dict[str, Any]) -> dict[str, Any] | None:
         "distancia_m": r.get("distancia_m"),
         "lat": r.get("lat"),
         "lon": r.get("lon"),
+        "tipo": r.get("tipo"),
         # §: OSM acredita que existe y dónde, no que el municipio lo haya
         # designado. El cliente debe poder decirlo.
         "ubicacion_referencial": bool(r.get("ubicacion_referencial")),
+    }
+
+
+def _lugar_sugerido(datos: dict[str, Any]) -> dict[str, Any] | None:
+    """Segundo resultado: el recurso más cercano cuando se pidió uno concreto."""
+    r = datos.get("recurso_sugerido")
+    if not isinstance(r, dict) or r.get("lat") is None or r.get("lon") is None:
+        return None
+    return {
+        "nombre": r.get("nombre"),
+        "direccion": r.get("direccion"),
+        "distancia_m": r.get("distancia_m"),
+        "lat": r.get("lat"),
+        "lon": r.get("lon"),
+        "tipo": r.get("tipo"),
+        "ubicacion_referencial": bool(r.get("ubicacion_referencial")),
+        "sugerido": True,
     }
 
 
@@ -203,6 +222,7 @@ class SalidaOrquestador:
     # El lugar encontrado, para que el cliente ofrezca abrirlo en el mapa.
     # Igual que la ruta: es una mejora sobre un texto que ya está completo.
     lugar: dict[str, Any] | None = None
+    lugar_sugerido: dict[str, Any] | None = None
     # §7.4: de las cuatro condiciones de activación del modo ligero, la latencia
     # es la única que el backend puede medir; las otras tres —fallos de envío de
     # media, petición del usuario y falta de señal D2C— solo las conoce el
@@ -327,6 +347,37 @@ class Orchestrator:
             advertencias=adaptado.advertencias or [],
         )
 
+    def _respuesta_telefonos(self, entrada: EntradaUsuario, inicio: datetime) -> SalidaOrquestador:
+        """Responde teléfonos desde la tabla verificada, sin RAG ni modelo."""
+        return SalidaOrquestador(
+            texto=phones.render_consulta(entrada.texto),
+            urgencia=UrgencyLevel.VERDE,
+            respuesta_plantilla_fija=True,
+            motivo_plantilla="consulta de teléfonos verificados (§24.3)",
+            fuentes_citadas=[
+                {
+                    "institucion": "PCM — teléfonos de emergencia",
+                    "url": "https://www.gob.pe/547-telefonos-de-emergencia",
+                    "confianza": "OFICIAL",
+                }
+            ],
+            latencia_ms=(datetime.now() - inicio).total_seconds() * 1000,
+        )
+
+    def _respuesta_sin_sesion(
+        self, entrada: EntradaUsuario, evaluacion: UrgencyAssessment, inicio: datetime
+    ) -> SalidaOrquestador:
+        """No deja que una consulta sin permiso caiga accidentalmente al RAG."""
+        adaptado = light_mode.adaptar(fx.SIN_SESION_PARA_ZONA, entrada.nivel_operacion)
+        return SalidaOrquestador(
+            texto=adaptado.texto,
+            urgencia=evaluacion.nivel,
+            respuesta_plantilla_fija=True,
+            motivo_plantilla="herramienta requiere sesión; se omite RAG (§13.4)",
+            latencia_ms=(datetime.now() - inicio).total_seconds() * 1000,
+            advertencias=adaptado.advertencias or [],
+        )
+
     # ── Camino con modelo ─────────────────────────────────────────────────
     def _respuesta_con_modelo(
         self, evaluacion: UrgencyAssessment, entrada: EntradaUsuario
@@ -414,7 +465,32 @@ class Orchestrator:
         # tool-calling entera: pasa de dos llamadas a una.
         ruta_calculada: dict[str, Any] | None = None
         lugar_encontrado: dict[str, Any] | None = None
+        lugar_sugerido: dict[str, Any] | None = None
         ruteo = router.rutear(entrada.texto, tiene_imagen=entrada.imagen is not None)
+        if ruteo.intent is router.Intent.TELEFONOS:
+            return self._respuesta_telefonos(entrada, datetime.now())
+        if ruteo.intent is router.Intent.OFFLINE and re.search(
+            r"\b(?:sin|no tengo) (senal|señal)\b", normalize(entrada.texto)
+        ):
+            adaptado = light_mode.adaptar(fx.SIN_SENAL, entrada.nivel_operacion)
+            return SalidaOrquestador(
+                texto=adaptado.texto,
+                urgencia=evaluacion.nivel,
+                respuesta_plantilla_fija=True,
+                motivo_plantilla="consulta de falta de señal (§7.5)",
+                latencia_ms=0.0,
+                advertencias=adaptado.advertencias or [],
+            )
+        # Recursos y rutas son consultas geográficas: sin sesión no hay dato
+        # que consultar. Otras intenciones (por ejemplo una explicación
+        # general de una alerta) todavía pueden responderse con RAG.
+        if self.ctx.user is None and ruteo.intent in (
+            router.Intent.RECURSOS,
+            router.Intent.RUTA,
+            router.Intent.REPORTE,
+            router.Intent.OFFLINE,
+        ):
+            return self._respuesta_sin_sesion(entrada, evaluacion, datetime.now())
         tools = None
         resultado_verificado: str | None = None
 
@@ -457,6 +533,8 @@ class Orchestrator:
                         ruta_calculada = salida["meta"]["ruta"]
                     if salida["meta"].get("lugar"):
                         lugar_encontrado = salida["meta"]["lugar"]
+                    if salida["meta"].get("lugar_sugerido"):
+                        lugar_sugerido = salida["meta"]["lugar_sugerido"]
                     if salida["meta"].get("sin_ruta"):
                         adaptado = light_mode.adaptar(
                             fx.SIN_RUTA_VERIFICABLE, entrada.nivel_operacion
@@ -499,8 +577,13 @@ class Orchestrator:
         # esta búsqueda, una pregunta general la respondería el modelo con lo
         # que recuerde, que es exactamente lo que esa precedencia prohíbe.
         if resultado_verificado is None and not tools and not con_imagen:
+            consulta_rag = " ".join(
+                parte for parte in (entrada.contexto_previo, entrada.texto) if parte
+            )
             fragmentos = Retriever(self.ctx.session).buscar(
-                entrada.texto, self.ctx.ahora, region=self._distrito_usuario()
+                consulta_rag,
+                self.ctx.ahora,
+                region=self._distrito_usuario(),
             )
             if fragmentos:
                 resultado_verificado = como_contexto(fragmentos)
@@ -604,8 +687,10 @@ class Orchestrator:
 
                 if salida["meta"].get("ruta"):
                     ruta_calculada = salida["meta"]["ruta"]
-                if salida["meta"].get("lugar"):
-                    lugar_encontrado = salida["meta"]["lugar"]
+                    if salida["meta"].get("lugar"):
+                        lugar_encontrado = salida["meta"]["lugar"]
+                    if salida["meta"].get("lugar_sugerido"):
+                        lugar_sugerido = salida["meta"]["lugar_sugerido"]
 
                 # §20.5: si no hay ruta verificable el texto es literal y lo
                 # entrega el backend. Si se dejara que el modelo redactara
@@ -677,7 +762,11 @@ class Orchestrator:
         # §13.4: el invitado preguntó algo que necesitaba una herramienta y no
         # se ejecutó ninguna. La limitación la pone el backend; dejarla en manos
         # del modelo es cómo se acabó pidiendo una ubicación que no servía.
-        requiere_sesion = ruteo.necesita_herramienta and rol is None
+        requiere_sesion = (
+            rol is None
+            and ruteo.intent
+            in (router.Intent.RECURSOS, router.Intent.RUTA, router.Intent.REPORTE, router.Intent.OFFLINE)
+        )
         if hubo_ruta:
             limitacion = fx.RUTA_CONDICIONES_CAMBIAN
         elif requiere_sesion:
@@ -723,6 +812,7 @@ class Orchestrator:
             sugerir_modo_ligero=activacion.activo,
             motivo_modo_ligero=activacion.motivo,
             lugar=lugar_encontrado,
+            lugar_sugerido=lugar_sugerido,
             advertencias=adaptado.advertencias or [],
             ruta=ruta_calculada,
         )
@@ -818,6 +908,7 @@ class Orchestrator:
                 # respuesta—, así que esto es una mejora y nunca el portador de
                 # la instrucción: si el botón no aparece, no se pierde nada.
                 "lugar": _primer_lugar(r.datos),
+                "lugar_sugerido": _lugar_sugerido(r.datos),
                 # Lo que el cliente necesita para dibujar la ruta. Se enumera
                 # campo a campo y no se reenvía `r.datos` entero a propósito:
                 # ahí dentro van los subpuntajes y los motivos de descarte, que

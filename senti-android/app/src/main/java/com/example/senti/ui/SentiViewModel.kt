@@ -66,6 +66,7 @@ data class Mensaje(
     // encontró y verificó. Habilita abrirlo en Google Maps. Igual que la
     // ruta: el nombre, la dirección y la distancia ya van en el texto.
     val lugar: Lugar? = null,
+    val lugarSugerido: Lugar? = null,
 )
 
 data class SentiUiState(
@@ -282,6 +283,7 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
                             fuentes = r.fuentes,
                             ruta = r.ruta,
                             lugar = r.lugar,
+                            lugarSugerido = r.lugarSugerido,
                         )
                     }
                     it.copy(
@@ -344,16 +346,6 @@ class SentiViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    /**
-     * El usuario marca una calle por la que no se puede pasar.
-     *
-     * Entra como reporte sin confirmar y no como cierre. El §6 reserva cerrar
-     * una vía al operador municipal o a una fuente oficial, y el §21.2 deja
-     * que un reporte penalice el paso pero nunca lo excluya. Que lo haya
-     * marcado quien está justo ahí no cambia eso: sigue siendo una sola voz, y
-     * el sistema no puede distinguir a quien ve un derrumbe de quien ve un
-     * charco. La diferencia la pone la validación, no la cercanía.
-     */
     /**
      * Recalcula la ruta esquivando lo que el usuario marcó.
      *

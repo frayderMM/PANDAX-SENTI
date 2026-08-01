@@ -42,6 +42,7 @@ class Intent(str, enum.Enum):
     OFFLINE = "offline"
     CONTACTO = "contacto"
     WEB = "web"
+    TELEFONOS = "telefonos"
     IMAGEN = "imagen"
     GENERAL = "general"
 
@@ -59,6 +60,7 @@ HERRAMIENTA: dict[Intent, str | None] = {
     Intent.OFFLINE: "guardar_informacion_offline",
     Intent.CONTACTO: "preparar_mensaje_contacto",
     Intent.WEB: "consultar_web_oficial",
+    Intent.TELEFONOS: None,
     Intent.IMAGEN: None,
     Intent.GENERAL: None,
 }
@@ -68,6 +70,13 @@ HERRAMIENTA: dict[Intent, str | None] = {
 # específico a más genérico, porque "¿cómo llego al centro de salud?" es una
 # ruta y no una consulta de recursos, aunque mencione ambos.
 _PATRONES: list[tuple[Intent, str]] = [
+    (
+        Intent.TELEFONOS,
+        r"\b(numeros?|telefonos?|llama(?:r)?|contactar)\b.{0,60}"
+        r"\b(emergencia|bomber[oa]s?|policia|pnp|samu|salud|indeci|defensa civil|"
+        r"sutran|carretera|essalud)\b"
+        r"|\bemergencias?\b.{0,35}\b(numeros?|telefonos?)\b",
+    ),
     (
         Intent.GENERAL,
         # Estar atascado abre el mapa para que la persona señale el bloqueo;
@@ -114,7 +123,8 @@ _PATRONES: list[tuple[Intent, str]] = [
         # Sin `\b` final tras los verbos: son raíces, y "bloqueada" o
         # "cerradas" continúan con más letras. Un `\b` ahí no casa nunca.
         r"\bcomo esta (la|el)\b.{0,25}\b(via|avenida|calle|carretera|puente|pista)\b"
-        r"|\b(via|avenida|calle|carretera|puente)\b.{0,20}\b(bloquead|cerrad|inundad|transitable)"
+        r"|\b(via|avenida|calle|carretera|puente|pista)\b.{0,30}\b(bloquead|cerrad|inundad|transitable|derrumbe|deslizamiento)"
+        r"|\b(derrumbe|deslizamiento|huaico)\b.{0,30}\b(via|avenida|calle|carretera|puente|pista)\b"
         r"|\bse puede pasar\b|\bhay reportes?\b|\besta abierta\b",
     ),
     (
@@ -129,7 +139,8 @@ _PATRONES: list[tuple[Intent, str]] = [
     ),
     (
         Intent.OFFLINE,
-        r"\bsin (conexion|internet|señal|senal|datos)\b|\bdescargar\b|\bguardar para\b"
+        r"\bsin (conexion|internet|señal|senal|datos)\b|\bno tengo (señal|senal|internet|conexion)\b"
+        r"|\bdescargar\b|\bguardar para\b"
         r"|\boffline\b|\bme quedo sin\b",
     ),
     (
@@ -202,7 +213,14 @@ def argumentos_por_defecto(
     if intent is Intent.ALERTA:
         return {"zona": distrito or ""}
     if intent is Intent.RECURSOS and lat is not None and lon is not None:
-        return {"lat": lat, "lon": lon, "tipo": _tipo_recurso(texto)}
+        nombre = _nombre_recurso(texto)
+        argumentos = {"lat": lat, "lon": lon, "tipo": _tipo_recurso(texto)}
+        if nombre:
+            argumentos["nombre"] = nombre
+            # Un nombre concreto tiene prioridad sobre la pregunta pública/
+            # privada: el usuario ya eligió el establecimiento.
+            argumentos["tipo"] = "centro_salud"
+        return argumentos
     if intent is Intent.RUTA and lat is not None and lon is not None:
         # "Dame una ruta de salida" no nombra un destino. Con la ubicación
         # basta: el destino es el recurso seguro validado más cercano, que es
@@ -228,9 +246,29 @@ def argumentos_por_defecto(
 
 def _tipo_recurso(texto: str) -> str:
     n = normalize(texto)
+    if re.search(r"\bbomber[oa]s?\b|\bcompania de bomberos\b|\bestacion de bomberos\b", n):
+        return "bomberos"
+    if re.search(r"\bhospital(es)?\b", n) and not _nombre_recurso(texto):
+        if re.search(r"\bpublic[oa]s?\b|\bminsa\b|\bestatal\b|\bnacional\b", n):
+            return "hospital_publico"
+        if re.search(r"\bprivad[oa]s?\b|\bclinica\b|\bclínica\b|\nessalud\b", n):
+            return "hospital_privado"
+        return "hospital_preguntar"
     if re.search(r"\brefugio\b|\balbergue\b", n):
         return "refugio"
     return "centro_salud"
+
+
+def _nombre_recurso(texto: str) -> str | None:
+    """Extrae solo un nombre concreto; no convierte «hospital más cercano» en nombre."""
+    n = normalize(texto)
+    m = re.search(r"\b(?:hospital|clinica|clínica)\s+(?:del?|de la)?\s*([a-z0-9][\w .'-]{2,80})", n)
+    if not m:
+        return None
+    candidato = re.split(r"\b(?:mas|más)\s+cercan[oa]s?\b|\bcercan[oa]s?\b|\ben mi zona\b", m.group(1))[0].strip()
+    if candidato in {"publico", "publica", "privado", "privada", "nacional"}:
+        return None
+    return candidato.strip(" .,-") or None
 
 
 def _via_mencionada(texto: str) -> str:

@@ -86,6 +86,39 @@ class TestArgumentos:
         a = argumentos_por_defecto(Intent.RECURSOS, lat=-11.9, lon=-76.7, texto="donde hay ayuda")
         assert a["tipo"] == "centro_salud"
 
+    @pytest.mark.parametrize(
+        ("texto", "tipo"),
+        [
+            ("hospital público más cercano", "hospital_publico"),
+            ("hospital privado más cercano", "hospital_privado"),
+            ("bomberos más cercano", "bomberos"),
+            ("hospital más cercano", "hospital_preguntar"),
+        ],
+    )
+    def test_recursos_pide_o_aplica_tipo(self, texto: str, tipo: str) -> None:
+        args = argumentos_por_defecto(Intent.RECURSOS, lat=-11.9, lon=-76.7, texto=texto)
+        assert args["tipo"] == tipo
+
+    def test_recursos_con_nombre_no_pregunta_publico_privado(self) -> None:
+        args = argumentos_por_defecto(
+            Intent.RECURSOS,
+            lat=-11.9,
+            lon=-76.7,
+            texto="quiero ir al hospital Rebagliati",
+        )
+        assert args["tipo"] == "centro_salud"
+        assert args["nombre"] == "rebagliati"
+
+    def test_consulta_telefono_no_se_manda_al_rag(self) -> None:
+        assert rutear("¿Cuál es el número de emergencia de los bomberos?").intent is Intent.TELEFONOS
+
+    def test_consulta_telefono_acepta_plural_cotidiano(self) -> None:
+        assert rutear("¿cuál es el número de bomberos?").intent is Intent.TELEFONOS
+
+    def test_variantes_viales_y_sin_senal_se_rutean(self) -> None:
+        assert rutear("la pista está bloqueada por un derrumbe").intent is Intent.REPORTE
+        assert rutear("no tengo señal, ¿qué hago?").intent is Intent.OFFLINE
+
     def test_reporte_extrae_la_via(self) -> None:
         a = argumentos_por_defecto(Intent.REPORTE, texto="¿la avenida Central está bloqueada?")
         assert "central" in a["via"].lower()
@@ -108,6 +141,16 @@ def test_ahorro_de_prompt() -> None:
     todas = len(json.dumps(registry.esquemas_para(Role.CIUDADANO), ensure_ascii=False))
     una = len(json.dumps(registry.get("consultar_alerta_actual").openai_schema(), ensure_ascii=False))
     assert una < todas / 3
+
+
+def test_numeros_emergencia_verificados_y_no_intercambiados() -> None:
+    from app.rules.phones import NACIONALES
+
+    contactos = {c.entidad: c.numero for c in NACIONALES}
+    assert contactos["PNP"] == "105"
+    assert contactos["SAMU"] == "106"
+    assert contactos["Cuerpo General de Bomberos"] == "116"
+    assert contactos["INDECI"] == "115"
 
 
 class TestBusquedaWeb:

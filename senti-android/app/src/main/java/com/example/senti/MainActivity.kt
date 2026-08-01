@@ -378,7 +378,6 @@ private fun PantallaPrincipal(
             ruta = enMapa,
             miUbicacion = miUbicacion,
             onCerrar = vm::cerrarMapa,
-            onMarcarBloqueo = { vm.marcarBloqueo(it.lat, it.lon) },
             onRecalcular = vm::recalcularRuta,
             recalculando = estado.recalculandoRuta,
             modoMarcadoInicial = estado.mapaEnModoMarcado,
@@ -2092,7 +2091,8 @@ private fun BurbujaMensaje(
                     m.ruta?.let {
                         AccionesRuta(it, hayMapaPropio) { onAbrirMapa(it) }
                     }
-                    m.lugar?.let { AbrirEnMaps(it) }
+                    m.lugar?.let { AbrirEnMaps(it, "Destino solicitado") }
+                    m.lugarSugerido?.let { AbrirEnMaps(it, "Sugerencia más cercana") }
                     if (m.fuentes.isNotEmpty()) FuentesDesplegables(m.fuentes)
                 }
             }
@@ -2278,32 +2278,49 @@ private fun MapaDeReporte(
 }
 
 @Composable
-private fun AbrirEnMaps(lugar: com.example.senti.data.Lugar) {
+private fun AbrirEnMaps(lugar: com.example.senti.data.Lugar, etiqueta: String) {
     val contexto = LocalContext.current
     Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
-        Button(
-            onClick = {
-                val destino = "${lugar.lat},${lugar.lon}"
-                val intento = Intent(
-                    Intent.ACTION_VIEW,
-                    "google.navigation:q=$destino&mode=w".toUri(),
-                ).setPackage("com.google.android.apps.maps")
-                // Sin Maps instalado se abre lo que haya: un `geo:` lo entiende
-                // cualquier app de mapas, y el §7.3 no permite que la
-                // instrucción dependa de tener una concreta.
-                val alternativa = Intent(
-                    Intent.ACTION_VIEW,
-                    "geo:$destino?q=$destino(${lugar.nombre.orEmpty()})".toUri(),
-                )
-                runCatching { contexto.startActivity(intento) }
-                    .recoverCatching { contexto.startActivity(alternativa) }
-            },
-            shape = RoundedCornerShape(Radios.boton),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Icon(Icons.Filled.MyLocation, contentDescription = null, Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Cómo llegar")
+        Text(etiqueta, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = {
+                    val destino = "${lugar.lat},${lugar.lon}"
+                    val intento = Intent(
+                        Intent.ACTION_VIEW,
+                        "google.navigation:q=$destino&mode=w".toUri(),
+                    ).setPackage("com.google.android.apps.maps")
+                    val alternativa = Intent(
+                        Intent.ACTION_VIEW,
+                        "geo:$destino?q=$destino(${lugar.nombre.orEmpty()})".toUri(),
+                    )
+                    runCatching { contexto.startActivity(intento) }
+                        .recoverCatching { contexto.startActivity(alternativa) }
+                },
+                shape = RoundedCornerShape(Radios.boton),
+                modifier = Modifier.weight(1f),
+            ) {
+                Icon(Icons.Filled.MyLocation, contentDescription = "Cómo llegar", Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Cómo llegar")
+            }
+            OutlinedButton(
+                onClick = {
+                    val destino = "${lugar.lat},${lugar.lon}"
+                    val intento = Intent(
+                        Intent.ACTION_VIEW,
+                        "geo:$destino?q=$destino(${lugar.nombre.orEmpty()})".toUri(),
+                    )
+                    contexto.startActivity(intento)
+                },
+                shape = RoundedCornerShape(Radios.boton),
+                modifier = Modifier.weight(1f),
+            ) {
+                Icon(Icons.Filled.Map, contentDescription = "Ver mapa", Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Ver mapa")
+            }
         }
         if (lugar.ubicacionReferencial) {
             // §20.2: OSM acredita que existe y dónde, no que el municipio lo

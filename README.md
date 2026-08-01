@@ -1,5 +1,11 @@
 # Lógica del sistema — SENTI
 
+## Licencia
+
+Este proyecto se distribuye bajo la [Apache License 2.0](LICENSE). El código
+original de SENTI puede usarse, modificarse y redistribuirse conforme a sus
+términos. Las dependencias de terceros conservan sus propias licencias.
+
 Contrato del sistema. Si el código no cumple esto, el código está mal.
 
 Las referencias `§n` apuntan a la especificación consolidada, que ya no vive en
@@ -104,6 +110,14 @@ comunitario · 0,0 si no hay información reciente de la zona. Los mínimos de
 duración y distancia se calculan **sobre las supervivientes**: compararse con
 una ruta descartada falsearía ambos subpuntajes.
 
+Los eventos viales activos que aparecen como marcadores (vía bloqueada,
+derrumbe, huaico, puente, inundación, agua o poste) también entran en la ruta:
+los oficiales se incorporan como señal validada y el cliente envía como
+`exclude_locations` los conflictos que caen sobre la ruta cuando el usuario
+recalcula. Un marcador no vial, como un sismo, no se interpreta como obstáculo
+de carretera. Un reporte ciudadano pendiente sigue siendo una penalización y
+no un cierre oficial.
+
 **Confianza (§21.2).** pendiente → probable (2 reportes de personas distintas,
 <300 m, <60 min) → validado (validador **con evidencia**) → confirmado
 (municipio o Estado). Solo `confirmado` excluye de la ruta.
@@ -180,6 +194,19 @@ vacía basta con estar autenticado.
 
 `/health/detalle` es la comprobación de despliegue, y cubre las cuatro cosas que
 se caen en silencio:
+
+El acceso del portal municipal (`/login.html`) usa `POST /auth/login`; no simula
+una sesión en el navegador. El backend sigue siendo quien autentica y emite el
+token, y la interfaz solo permite continuar a los roles `operador_municipal` y
+`administrador`. Tras autenticarse, el portal abre `/admin.html#/dashboard`, el
+panel del operador (barra lateral con Dashboard y Alertas). Ese dashboard
+todavía trabaja con datos de ejemplo — clima, mapa de zona y métricas están
+pendientes de conectarse a Open-Meteo, Google Maps y al backend real.
+
+El tablero con datos reales (`GET /municipal/tablero` y el mapa de calor
+agregado) sigue existiendo en `/info-general.html`: mismo `POST /auth/login`,
+pero sin token no muestra nada. Hoy es una pantalla aparte, no enlazada desde
+el panel del operador.
 
 | Comprueba | Por qué ahí |
 |---|---|
@@ -319,8 +346,17 @@ hospital puede estar lejos —7,7 km desde Surco, muy fuera del radio de «lo qu
 tengo al lado»—. El nombre manda sobre el tipo: si el modelo dedujo `refugio` y
 el usuario dijo «Rebagliati», exigir las dos cosas no encuentra nada.
 
-Y si no aparece, **se declara la ausencia; no se sustituye por el más
-cercano**. Devolver otro hospital sin decirlo es la peor variante posible del
+Para una petición genérica de «hospital más cercano», SENTI pregunta primero si
+se busca un hospital público, uno privado o una estación de bomberos. Los
+recursos importados desde OpenStreetMap solo reciben la categoría pública o
+privada cuando la fuente trae una señal explícita de titularidad; si no, se
+mantienen como centro de salud genérico y no se inventa su condición. Si se
+solicita un establecimiento concreto, la respuesta conserva ese resultado y
+ofrece aparte el recurso de salud más cercano como sugerencia, con acciones
+separadas para «Cómo llegar» y «Ver mapa».
+
+Y si no aparece, **se declara la ausencia; no se sustituye silenciosamente por
+el más cercano**. Devolver otro hospital sin decirlo es la peor variante posible del
 §11.3: alguien pide un sitio, lee un nombre distinto con prisa y sigue un
 enlace hasta el lugar equivocado creyendo que va al que pidió.
 
