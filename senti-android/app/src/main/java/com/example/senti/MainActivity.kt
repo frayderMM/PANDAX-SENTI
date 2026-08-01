@@ -102,6 +102,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.heightIn
@@ -1991,6 +1994,7 @@ private fun PantallaAcceso(
     var modoRegistro by remember { mutableStateOf(false) }
     var email by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
+    var passVisible by remember { mutableStateOf(false) }
     var nombre by remember { mutableStateOf("") }
     var distrito by remember { mutableStateOf("") }
     var telefono by remember { mutableStateOf("") }
@@ -2120,7 +2124,28 @@ private fun PantallaAcceso(
                         singleLine = true,
                         shape = RoundedCornerShape(28.dp),
                         colors = coloresCampoPildora(),
-                        visualTransformation = PasswordVisualTransformation(),
+                        visualTransformation = if (passVisible) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
+                        },
+                        // Sin esto, tipear una contraseña larga a ciegas en un
+                        // formulario con dos campos (correo y contraseña, y
+                        // hasta cuatro en el registro) es la situación exacta
+                        // en la que un error tipográfico pasa desapercibido
+                        // hasta que el envío falla.
+                        trailingIcon = {
+                            IconButton(onClick = { passVisible = !passVisible }) {
+                                Icon(
+                                    if (passVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                    contentDescription = if (passVisible) {
+                                        "Ocultar contraseña"
+                                    } else {
+                                        "Mostrar contraseña"
+                                    },
+                                )
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     )
