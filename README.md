@@ -153,7 +153,7 @@ de dejar que se estime.
 
 ## La API
 
-32 endpoints. La columna de permiso es la que valida el backend (§6); donde está
+34 endpoints. La columna de permiso es la que valida el backend (§6); donde está
 vacía basta con estar autenticado.
 
 | Método y ruta | Qué hace | Permiso |
@@ -181,12 +181,14 @@ vacía basta con estar autenticado.
 | `POST /municipal/cierres/{id}/reabrir` | reapertura | `CONFIRMAR_CIERRE_VIA` |
 | `POST /municipal/recursos` | registra recurso oficial | `REGISTRAR_RECURSO` |
 | `POST /municipal/comunicados` | comunicado municipal | `PUBLICAR_COMUNICADO` |
+| `POST /municipal/alertas` | publica la alerta y, si corresponde, difunde por WhatsApp (§13.4) | `PUBLICAR_ALERTA` |
 | `GET /municipal/tablero` | indicadores reales del panel municipal (§22), consumido por el Dashboard del operador y por `/info-general.html` | `PUBLICAR_COMUNICADO` |
 | `GET /municipal/mapa-calor` | GeoJSON **agregado por celda** (§22) | `PUBLICAR_COMUNICADO` |
 | `PUT /admin/usuarios/{id}/rol` | cambia el rol | `GESTIONAR_USUARIOS_Y_FUENTES` |
 | `POST /admin/parametros-riesgo` | versiona umbrales y pesos (§23) | `GESTIONAR_USUARIOS_Y_FUENTES` |
 | `GET /admin/fuentes` | registro de fuentes oficiales | `GESTIONAR_USUARIOS_Y_FUENTES` |
-| `POST /admin/alertas/interpretar` | el modelo **propone** campos (§15) | `GESTIONAR_USUARIOS_Y_FUENTES` |
+| `POST /admin/alertas/interpretar` | el modelo **propone** campos desde texto (§15) | `PUBLICAR_ALERTA` |
+| `POST /admin/alertas/interpretar-pdf` | igual, pero recibe el PDF directo (sin OCR) | `PUBLICAR_ALERTA` |
 | `GET /admin/auditoria` | auditoría completa | `CONSULTAR_AUDITORIA` |
 | `POST /webhooks/whatsapp` | entrada de Evolution API (§10.1) | cabecera `X-Senti-Token` |
 | `GET /fuentes/estado` | salud de las fuentes (§11.3) | — |
@@ -575,12 +577,16 @@ para que la revisión humana no se pueda saltar:
 
 | Endpoint | Qué propone | Quién decide |
 |---|---|---|
-| `POST /admin/alertas/interpretar` | campos de un boletín (§15) | el operador publica, o no |
+| `POST /admin/alertas/interpretar` (o `-pdf`) | campos de un boletín (§15) | el operador publica, o no, con `POST /municipal/alertas` |
 | `POST /reportes/proponer` | tipo y descripción (§21.1) | el ciudadano revisa y publica |
 
 El §15 prohíbe al modelo fijar nivel, zonas o vigencia; el §21.1 exige que el
 ciudadano revise antes de publicar. Por eso `requiere_revision_humana` se fuerza
 en el backend en vez de creerse lo que devuelva el modelo.
+
+`interpretar-pdf` solo lee texto ya embebido en el PDF: un boletín escaneado
+como imagen no tiene texto que extraer y el endpoint lo dice (422) en vez de
+mandarle al modelo un documento vacío disfrazado de contenido.
 
 ## La ubicación siempre llega como coordenadas
 
@@ -856,7 +862,7 @@ descansa en que las decisiones sean deterministas y medibles (§32).
 | configurar hogar / plan | sí | no | no | no |
 | crear reporte | sí | sí | sí | no |
 | validar reporte | no | sí | sí | no |
-| cerrar vía / recursos / comunicado | no | no | sí | no |
+| cerrar vía / recursos / comunicado / alerta | no | no | sí | no |
 | usuarios y fuentes | no | no | no | sí |
 | auditoría | no | propia | propia | completa |
 
