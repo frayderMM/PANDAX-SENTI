@@ -1,0 +1,41 @@
+# Secretos y entorno (§28: jamás en el repositorio)
+.env
+.env.local
+# Las copias que deja un cambio de configuración en el servidor tienen dentro
+# exactamente los mismos secretos que el original. Sin esta línea, un
+# `git add -A` en el servidor los commitea sin que nadie lo note.
+.env.bak*
+.env.*.bak
+*.pem
+*.key
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node / PWA
+node_modules/
+dist/
+.vite/
+
+# Android
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.cxx/
+captures/
+
+# Datos generados: teselas y extractos OSM son GB que se reconstruyen solos
+*.osm.pbf
+*.mbtiles
+*.pmtiles
+
+# GGUF del servidor: se copian, no se versionan
+modelos/*
+!modelos/.gitkeep
